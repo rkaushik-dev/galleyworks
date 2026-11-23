@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.rkaushikdev.galleyworks.CanonConfig;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class DefinedTermsTest {
 
@@ -100,5 +103,66 @@ class DefinedTermsTest {
     void aDocumentWithNoDefinitionsIsUntouched() {
         String text = "The report said \"late\".";
         assertThat(rewrite(text)).isEqualTo(text);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "includes",
+                "include",
+                "shall mean",
+                "shall include",
+                "has the meaning given in W.S. 41-1-101",
+                "is defined as"
+            })
+    void everyDefiningVerbIsADefinition(String verb) {
+        assertThat(terms("As used in this section, \"district\" " + verb + " an irrigation district."))
+                .containsExactly("district");
+    }
+
+    @Test
+    void synonymsDefinedTogetherAreEachDefined() {
+        assertThat(terms("\"Appropriator\" or \"user\" means a holder of record."))
+                .containsExactly("Appropriator", "user");
+        assertThat(terms("\"Board\", \"commission\" and \"department\" mean the agency."))
+                .containsExactly("Board", "commission", "department");
+    }
+
+    @Test
+    void theTermFormIsADefinition() {
+        assertThat(terms("the term \"season\" means the irrigation season.")).containsExactly("season");
+    }
+
+    @Test
+    void aQuotationFollowedByAnotherVerbIsNoDefinition() {
+        assertThat(terms("The sign shall read \"no fee\" and contain the schedule."))
+                .isEmpty();
+        assertThat(terms("The word \"means\" appears here.")).isEmpty();
+    }
+
+    @Test
+    void laterUsesOfEverySynonymLoseTheirQuotes() {
+        String text = "\"Appropriator\" or \"user\" means a holder. A \"user\" shall file.";
+        assertThat(rewrite(text)).isEqualTo("Appropriator or user means a holder. A user shall file.");
+    }
+
+    @Test
+    void aQuotedPluralIsAUseOfTheDefinedSingular() {
+        String text = "\"Appropriator\" means a holder. All \"appropriators\" and \"ditches\" are listed.";
+        assertThat(rewrite(text))
+                .isEqualTo("Appropriator means a holder. All appropriators and \"ditches\" are listed.");
+        assertThat(rewrite("\"Ditch\" includes a canal. Two \"ditches\" meet."))
+                .isEqualTo("Ditch includes a canal. Two ditches meet.");
+    }
+
+    @Test
+    void thePluralCheckNeedsTheSingularToBeDefined() {
+        assertThat(DefinedTerms.usesDefinedTerm("boards", Set.of("board"))).isTrue();
+        assertThat(DefinedTerms.usesDefinedTerm("Boards", Set.of("board"))).isTrue();
+        assertThat(DefinedTerms.usesDefinedTerm("boardes", Set.of("board"))).isTrue();
+        assertThat(DefinedTerms.usesDefinedTerm("bards", Set.of("board"))).isFalse();
+        assertThat(DefinedTerms.usesDefinedTerm("s", Set.of("board"))).isFalse();
+        assertThat(DefinedTerms.usesDefinedTerm("water  right", Set.of("water right")))
+                .isTrue();
     }
 }
