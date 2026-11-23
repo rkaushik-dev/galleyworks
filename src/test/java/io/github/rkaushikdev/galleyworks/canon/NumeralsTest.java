@@ -3,8 +3,11 @@ package io.github.rkaushikdev.galleyworks.canon;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.rkaushikdev.galleyworks.CanonConfig;
+import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class NumeralsTest {
 
@@ -118,5 +121,55 @@ class NumeralsTest {
     void theRuleCanBeSwitchedOff() {
         String text = "sixty (60) days";
         assertThat(rewrite(text, new CanonConfig().withNormalizeNumbers(false))).isEqualTo(text);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "the first day of July, 2025",
+                "the 1st day of July, 2025",
+                "first day of July 2025",
+                "the First Day of July, in the year 2025",
+                "July 1st, 2025"
+            })
+    void formalDatesBecomeIso(String printed) {
+        assertThat(rewrite("effective " + printed + ".")).isEqualTo("effective date 2025-07-01.");
+    }
+
+    @Test
+    void compoundOrdinalDaysAreRead() {
+        assertThat(rewrite("on the twenty-first day of March, 2024")).isEqualTo("on date 2024-03-21");
+        assertThat(rewrite("on the twenty first day of March, 2024")).isEqualTo("on date 2024-03-21");
+        assertThat(rewrite("on the thirty-first day of December, 2024")).isEqualTo("on date 2024-12-31");
+        assertThat(rewrite("on the thirtieth day of June, 2024")).isEqualTo("on date 2024-06-30");
+    }
+
+    @Test
+    void aDateThatDoesNotExistIsLeftAsPrinted() {
+        assertThat(rewrite("on February 30, 2025")).isEqualTo("on February 30, 2025");
+        assertThat(rewrite("on the thirty-first day of April, 2025"))
+                .isEqualTo("on the thirty-first day of April, 2025");
+    }
+
+    @Test
+    void anOrdinalDayWithoutAMonthIsStillJustAnOrdinal() {
+        assertThat(rewrite("the 1st day of the session")).isEqualTo("the 1 day of the session");
+    }
+
+    @Test
+    void ordinalWordsAreNumbered() {
+        assertThat(Numerals.ORDINAL_DAYS).hasSize(31).startsWith("first").endsWith("thirty-first");
+        assertThat(Numerals.ordinalDay("Twenty-Second")).hasValue(22);
+        assertThat(Numerals.ordinalDay("twenty  second")).hasValue(22);
+        assertThat(Numerals.ordinalDay("thirty-second")).isEmpty();
+    }
+
+    @Test
+    void datesAreBuiltOnlyWhenTheyExist() {
+        assertThat(Numerals.dateOf("July", 1, 2025)).contains(LocalDate.of(2025, 7, 1));
+        assertThat(Numerals.dateOf("FEBRUARY", 29, 2024)).contains(LocalDate.of(2024, 2, 29));
+        assertThat(Numerals.dateOf("February", 29, 2025)).isEmpty();
+        assertThat(Numerals.dateOf("Smarch", 1, 2025)).isEmpty();
+        assertThat(Numerals.MONTHS).containsEntry("september", 9).hasSize(12);
     }
 }
