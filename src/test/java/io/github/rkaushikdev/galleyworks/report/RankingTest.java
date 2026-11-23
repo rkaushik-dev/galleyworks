@@ -11,12 +11,14 @@ import io.github.rkaushikdev.galleyworks.Chamber;
 import io.github.rkaushikdev.galleyworks.ConfigError;
 import io.github.rkaushikdev.galleyworks.Engine;
 import io.github.rkaushikdev.galleyworks.InstrumentKey;
+import io.github.rkaushikdev.galleyworks.ReportConfig;
 import io.github.rkaushikdev.galleyworks.match.Confidence;
 import io.github.rkaushikdev.galleyworks.support.Cli;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -54,7 +56,7 @@ class RankingTest {
 
     private static InstrumentReport filtered(
             InstrumentReport report, Optional<Confidence> floor, boolean crossingOnly, Optional<Integer> limit) {
-        return Ranking.filterReport(report, floor, crossingOnly, limit);
+        return Ranking.filterReport(report, new ReportFilter(floor, crossingOnly, Set.of(), limit));
     }
 
     @Test
@@ -190,5 +192,66 @@ class RankingTest {
                             .map(ReportedMatch::otherPath)
                             .toList());
         }
+    }
+
+    @Test
+    void aSourceFilterKeepsOnlyTheNamedJurisdictions() {
+        InstrumentReport report = synthetic(
+                match(Confidence.STRONG, "wy", "1"),
+                match(Confidence.WEAK, "nd", "2"),
+                match(Confidence.STRONG, "co", "3"));
+        InstrumentReport narrowed = Ranking.filterReport(report, ReportFilter.NONE.withFrom(Set.of("wy", "nd")));
+        assertThat(narrowed.matches())
+                .extracting(item -> item.otherKey().jurisdiction())
+                .containsExactly("wy", "nd");
+        assertThat(narrowed.summary()).isEqualTo(report.summary());
+    }
+
+    @Test
+    void everySettingHasToKeepAFindingAndTheLimitComesLast() {
+        InstrumentReport report = synthetic(
+                match(Confidence.WEAK, "wy", "1"),
+                match(Confidence.STRONG, "wy", "2"),
+                match(Confidence.STRONG, "mt", "3"),
+                match(Confidence.MODERATE, "wy", "4"),
+                match(Confidence.STRONG, "co", "5"));
+        ReportFilter filter = ReportFilter.NONE
+                .withFrom(Set.of("wy", "mt"))
+                .withCrossingOnly(true)
+                .withMinConfidence(Confidence.MODERATE)
+                .withLimit(1);
+        assertThat(Ranking.filterReport(report, filter).matches())
+                .extracting(ReportedMatch::otherPath)
+                .containsExactly("2");
+        assertThat(Ranking.filterReport(report, filter.withLimit(5)).matches())
+                .extracting(ReportedMatch::otherPath)
+                .containsExactly("2", "4");
+    }
+
+    @Test
+    void theConfiguredFilterTreatsAWeakFloorAsNone() {
+        assertThat(ReportFilter.of(new ReportConfig())).isEqualTo(ReportFilter.NONE);
+        assertThat(ReportFilter.NONE.isEmpty()).isTrue();
+        ReportFilter configured = ReportFilter.of(new ReportConfig("strong", true, Optional.of(3), 3));
+        assertThat(configured.minConfidence()).contains(Confidence.STRONG);
+        assertThat(configured.crossingOnly()).isTrue();
+        assertThat(configured.limit()).contains(3);
+        assertThat(configured.isEmpty()).isFalse();
+        assertThat(ReportFilter.NONE.withFrom(Set.of("wy", "co")).toString()).contains("from=[co, wy]");
+    }
+
+    @Test
+    void theCommandsTakeASourceFilter() {
+        // Discovery runs the corpus in file name order, so Wyoming comes last and reuses the others.
+        Path corpus = Cli.goldenCorpus(tmp);
+        String output = run("report", "--from", "mt", "--only-findings", corpus.toString())
+                .output();
+        assertThat(output)
+                .contains("lexdrift report for wy/2023/lower/HB0142")
+                .contains("matches mt/2024/lower/HB0311");
+        assertThat(output).doesNotContain("matches nd/2025/lower/HB0044").doesNotContain("matches laramie");
+        String both = run("report", "--from", "mt,nd", "--only-findings", corpus.toString())
+                .output();
+        assertThat(both).contains("matches nd/2025/lower/HB0044").contains("matches mt/2024/lower/HB0311");
     }
 }

@@ -11,11 +11,14 @@ import io.github.rkaushikdev.galleyworks.ingest.ReaderRegistry;
 import io.github.rkaushikdev.galleyworks.match.Confidence;
 import io.github.rkaushikdev.galleyworks.report.InstrumentReport;
 import io.github.rkaushikdev.galleyworks.report.Ranking;
+import io.github.rkaushikdev.galleyworks.report.ReportFilter;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
@@ -126,9 +129,29 @@ public final class Common {
         @Option(names = "--top", paramLabel = "INTEGER", description = "print only the strongest N findings")
         Integer top;
 
-        /** {@code report} narrowed by these flags. */
+        @Option(
+                names = "--from",
+                paramLabel = "JURISDICTION",
+                split = ",",
+                description = "print only findings against these jurisdictions")
+        List<String> from;
+
+        /** The filter these flags ask for. */
+        public ReportFilter filter() {
+            ReportFilter filter = ReportFilter.NONE.withCrossingOnly(crossingOnly);
+            if (minConfidence != null) {
+                filter = filter.withMinConfidence(Confidence.fromValue(minConfidence));
+            }
+            if (from != null) {
+                filter = filter.withFrom(Set.copyOf(from));
+            }
+            return top == null ? filter : filter.withLimit(top);
+        }
+
+        /** {@code report} narrowed by these flags, on top of whatever the configuration already did. */
         public InstrumentReport narrow(InstrumentReport report) {
-            return Common.narrow(report, Optional.ofNullable(minConfidence), crossingOnly, Optional.ofNullable(top));
+            ReportFilter filter = filter();
+            return filter.isEmpty() ? report : Ranking.filterReport(report, filter);
         }
     }
 
@@ -191,15 +214,6 @@ public final class Common {
             Optional<Path> indexPath, Optional<Path> configPath, Optional<String> profile, Optional<String> reading) {
         EngineConfig config = buildConfig(configPath, profile, reading);
         return new Engine(config, buildIndex(indexPath, config));
-    }
-
-    /** Apply the display flags on top of whatever the configuration already did. */
-    public static InstrumentReport narrow(
-            InstrumentReport report, Optional<String> minConfidence, boolean crossingOnly, Optional<Integer> top) {
-        if (minConfidence.isEmpty() && !crossingOnly && top.isEmpty()) {
-            return report;
-        }
-        return Ranking.filterReport(report, minConfidence.map(Confidence::fromValue), crossingOnly, top);
     }
 
     /** Close {@code index} when it holds a database connection. */

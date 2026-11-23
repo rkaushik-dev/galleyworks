@@ -1,14 +1,11 @@
 package io.github.rkaushikdev.galleyworks.report;
 
-import io.github.rkaushikdev.galleyworks.ConfigError;
-import io.github.rkaushikdev.galleyworks.Context;
 import io.github.rkaushikdev.galleyworks.ReportConfig;
 import io.github.rkaushikdev.galleyworks.match.Confidence;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Ordering and filtering findings before they are printed.
@@ -50,44 +47,23 @@ public final class Ranking {
      * survived a display filter, and recomputing it here would make two reports of the same run
      * disagree about how much text was reused.
      */
-    public static InstrumentReport filterReport(
-            InstrumentReport report,
-            Optional<Confidence> minConfidence,
-            boolean crossingOnly,
-            Optional<Integer> limit) {
-        if (limit.isPresent() && limit.get() < 0) {
-            throw new ConfigError("limit cannot be negative", Context.of("limit", limit.get()));
-        }
-        Optional<Integer> floor = minConfidence.map(CONFIDENCE_ORDER::get);
-        List<ReportedMatch> kept = new ArrayList<>();
-        for (ReportedMatch match : rank(report.matches())) {
-            if (floor.isPresent() && CONFIDENCE_ORDER.get(match.confidence()) > floor.get()) {
-                continue;
-            }
-            if (crossingOnly
-                    && match.otherKey().jurisdiction().equals(report.key().jurisdiction())) {
-                continue;
-            }
-            kept.add(match);
-        }
-        if (limit.isPresent() && kept.size() > limit.get()) {
-            kept = new ArrayList<>(kept.subList(0, limit.get()));
+    public static InstrumentReport filterReport(InstrumentReport report, ReportFilter filter) {
+        List<ReportedMatch> kept = rank(report.matches()).stream()
+                .filter(match -> filter.keeps(report, match))
+                .toList();
+        if (filter.limit().isPresent() && kept.size() > filter.limit().get()) {
+            kept = kept.subList(0, filter.limit().get());
         }
         return report.withMatches(kept);
     }
 
     /** Rank a report and apply no filter. */
     public static InstrumentReport filterReport(InstrumentReport report) {
-        return filterReport(report, Optional.empty(), false, Optional.empty());
+        return filterReport(report, ReportFilter.NONE);
     }
 
     /** Narrow a report the way the configuration says to. */
     public static InstrumentReport applyReportConfig(InstrumentReport report, ReportConfig settings) {
-        Confidence floor = Confidence.fromValue(settings.minConfidence());
-        return filterReport(
-                report,
-                floor == Confidence.WEAK ? Optional.empty() : Optional.of(floor),
-                settings.crossingOnly(),
-                settings.top());
+        return filterReport(report, ReportFilter.of(settings));
     }
 }
