@@ -110,4 +110,22 @@ class CliDiffusionTest {
         assertThat(result.code()).isEqualTo(EXIT_OK);
         assertThat(result.output()).contains("0 families");
     }
+
+    @Test
+    void aJurisdictionTableShowsHowTheLanguageMoved() {
+        Path root = Cli.mkdir(tmp.resolve("hierarchy"));
+        Cli.writeBill2025(root, makeBill("wy", "HB0142", MODEL_CLAUSE, LocalDate.of(2023, 7, 1)));
+        Cli.writeBill2025(root, makeBill("mt", "HB0311", MODEL_CLAUSE, LocalDate.of(2024, 7, 1)));
+        Cli.writeBill2025(root, makeBill("laramie", "2024-31", MODEL_CLAUSE, LocalDate.of(2025, 4, 1)));
+        String table = Cli.write(
+                        tmp.resolve("jurisdictions.yaml"),
+                        "jurisdictions:\n  - {slug: wy, name: Wyoming, level: state}\n"
+                                + "  - {slug: mt, name: Montana, level: state}\n"
+                                + "  - {slug: laramie, name: Laramie, level: municipal, parent: wy}\n")
+                .toString();
+        String output =
+                run("diffusion", "--jurisdiction-table", table, root.toString()).output();
+        assertThat(output).contains("  moved: ").contains(" downward").contains(" horizontal");
+        assertThat(run("diffusion", root.toString()).output()).doesNotContain("moved:");
+    }
 }

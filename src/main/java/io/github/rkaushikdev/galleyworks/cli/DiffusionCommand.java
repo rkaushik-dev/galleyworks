@@ -2,10 +2,12 @@ package io.github.rkaushikdev.galleyworks.cli;
 
 import io.github.rkaushikdev.galleyworks.Engine;
 import io.github.rkaushikdev.galleyworks.InstrumentKey;
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
 import io.github.rkaushikdev.galleyworks.RunResult;
 import io.github.rkaushikdev.galleyworks.diffusion.DiffusionMetrics;
 import io.github.rkaushikdev.galleyworks.diffusion.Lineage;
 import io.github.rkaushikdev.galleyworks.diffusion.ReuseGraph;
+import io.github.rkaushikdev.galleyworks.diffusion.Spread;
 import io.github.rkaushikdev.galleyworks.diffusion.Timeline;
 import io.github.rkaushikdev.galleyworks.report.DotWriter;
 import java.io.IOException;
@@ -16,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -23,7 +27,12 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
-/** {@code lexdrift diffusion}: report which families of instruments share text. */
+/**
+ * {@code lexdrift diffusion}: report which families of instruments share text.
+ *
+ * <p>Given {@code --jurisdiction-table}, each family also says how its edges moved: across between
+ * peers, down from a state to its cities, or up from a city to its state.
+ */
 @Command(
         name = "diffusion",
         header = "report which families of instruments share text",
@@ -66,18 +75,27 @@ public final class DiffusionCommand extends Common.Base {
 
     /** One block of text about one family. */
     public static List<String> describe(Lineage lineage, DiffusionMetrics metrics) {
+        return describe(lineage, metrics, Optional.empty());
+    }
+
+    /**
+     * One block of text about one family, with the way its edges moved through the hierarchy of
+     * government when a jurisdiction table supplied one.
+     */
+    public static List<String> describe(
+            Lineage lineage, DiffusionMetrics metrics, Optional<Map<Spread, Integer>> spread) {
         String root = lineage.root().map(InstrumentKey::slug).orElse("unknown");
         String confidence = lineage.confident() ? "dated" : "partly dated";
+        OptionalLong span = metrics.spanDays();
+        String reach = metrics.characters() + " characters across " + metrics.edges() + " edges";
         List<String> lines = new ArrayList<>();
         lines.add("family of " + lineage.size() + " across " + String.join(", ", lineage.jurisdictions()));
         lines.add("  earliest: " + root + " (" + confidence + ")");
-        OptionalLong span = metrics.spanDays();
-        if (span.isPresent()) {
-            lines.add("  spread over " + span.getAsLong() + " days, " + metrics.characters() + " characters across "
-                    + metrics.edges() + " edges");
-        } else {
-            lines.add("  " + metrics.characters() + " characters across " + metrics.edges() + " edges, no dates");
-        }
+        lines.add(
+                span.isPresent()
+                        ? "  spread over " + span.getAsLong() + " days, " + reach
+                        : "  " + reach + ", no dates");
+        spread.ifPresent(counts -> lines.add("  moved: " + Spread.describe(counts)));
         for (InstrumentKey member : lineage.members()) {
             String marker = lineage.root().filter(member::equals).isPresent() ? "*" : " ";
             lines.add("   " + marker + " " + member.slug());
@@ -123,8 +141,12 @@ public final class DiffusionCommand extends Common.Base {
         List<Lineage> families = Lineage.lineages(graph).stream()
                 .filter(lineage -> lineage.size() >= minMembers && (!crossingOnly || lineage.spreads()))
                 .toList();
+        JurisdictionRegistry jurisdictions = engine.jurisdictions();
         for (Lineage lineage : families) {
-            describe(lineage, DiffusionMetrics.measure(graph, lineage)).forEach(this::line);
+            Optional<Map<Spread, Integer>> spread = jurisdictions.size() == 0
+                    ? Optional.empty()
+                    : Optional.of(Spread.tally(graph, lineage, jurisdictions));
+            describe(lineage, DiffusionMetrics.measure(graph, lineage), spread).forEach(this::line);
             if (showTimeline) {
                 renderTimeline(graph, lineage).forEach(this::line);
             }
@@ -135,13 +157,17 @@ public final class DiffusionCommand extends Common.Base {
         }
         line(families.size() + " families over " + graph.size() + " edges");
         if (dotPath != null) {
-            try (Writer stream = Files.newBufferedWriter(dotPath, StandardCharsets.UTF_8)) {
-                DotWriter.writeDot(graph, stream, "reuse");
-            } catch (IOException exc) {
-                throw new UncheckedIOException(exc);
-            }
-            line("graph written to " + dotPath);
+            writeDot(graph);
         }
         return families.isEmpty() ? Main.EXIT_OK : Main.EXIT_FINDINGS;
+    }
+
+    private void writeDot(ReuseGraph graph) {
+        try (Writer stream = Files.newBufferedWriter(dotPath, StandardCharsets.UTF_8)) {
+            DotWriter.writeDot(graph, stream, "reuse");
+        } catch (IOException exc) {
+            throw new UncheckedIOException(exc);
+        }
+        line("graph written to " + dotPath);
     }
 }
