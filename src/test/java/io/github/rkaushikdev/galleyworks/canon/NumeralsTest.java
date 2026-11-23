@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class NumeralsTest {
@@ -181,5 +182,50 @@ class NumeralsTest {
                 .containsExactly(LocalDate.of(2025, 7, 1), LocalDate.of(2026, 12, 31));
         assertThat(dates.getFirst().span().sliceOf(text)).isEqualTo("the first day of July, 2025");
         assertThat(dates.getLast().span().sliceOf(text)).isEqualTo("December 31, 2026");
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            textBlock =
+                    """
+            a vote of two-thirds (2/3) of the members  | a vote of 2/3 of the members
+            a vote of two-thirds of the members        | a vote of 2/3 of the members
+            three fourths of the land                  | 3/4 of the land
+            one quarter of the fee                     | 1/4 of the fee
+            one-half (1/2) of the cost                 | 1/2 of the cost
+            """)
+    void writtenFractionsFoldToDigits(String printed, String folded) {
+        assertThat(rewrite(printed)).isEqualTo(folded);
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            textBlock =
+                    """
+            a tax of one-half of one percent (0.5%) | a tax of 0.5 pct
+            a tax of one-half of one percent        | a tax of 0.5 pct
+            a tax of one-tenth of one per cent      | a tax of 0.1 pct
+            a tax of three-fourths of 1%            | a tax of 0.75 pct
+            a tax of one-third of one percent       | a tax of 0.3333 pct
+            """)
+    void aFractionOfAPercentBecomesThePercentage(String printed, String folded) {
+        assertThat(rewrite(printed)).isEqualTo(folded);
+    }
+
+    @Test
+    void trailingZerosNoLongerDistinguishTwoAmounts() {
+        assertThat(rewrite("a rate of 7.50%"))
+                .isEqualTo(rewrite("a rate of 7.5%"))
+                .isEqualTo("a rate of 7.5 pct");
+        assertThat(rewrite("$5.50")).isEqualTo("usd 5.5");
+        assertThat(rewrite("ten (10.0) days")).isEqualTo("10 days");
+    }
+
+    @Test
+    void aBareDenominatorIsNotAFraction() {
+        String text = "half of the fee and a third reading";
+        assertThat(rewrite(text)).isEqualTo(text);
     }
 }
