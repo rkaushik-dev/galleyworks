@@ -14,32 +14,28 @@ import java.util.regex.Pattern;
  * Statutory citation normalization.
  *
  * <p>The same provision is cited half a dozen ways depending on who is drafting: {@code W.S.
- * 41-3-101}, {@code Wyo. Stat. Ann. § 41-3-101}, {@code section 41-3-101}. Every recognised form is
- * rewritten to {@code cite <reporter> <number><subsections>}. The reporter is kept, because
- * 41-3-101 in a state code and 41-3-101 in a municipal code are not the same provision.
+ * 41-3-101}, {@code Wyo. Stat. Ann. § 41-3-101}, {@code section 41-3-101}. Montana and Colorado put
+ * the code after the number instead, as in {@code section 85-2-101, MCA} and {@code section
+ * 35-65-101, C.R.S.}. Every recognised form is rewritten to {@code cite <reporter>
+ * <number><subsections>}. The reporter is kept, because 41-3-101 in a state code and 41-3-101 in a
+ * municipal code are not the same provision. The codes recognised are {@link Reporter#KNOWN}.
  */
 public final class Citations {
 
     /** The reporter recorded for a citation that names no code. */
     public static final String LOCAL_REPORTER = "local";
 
-    private static final List<String[]> REPORTER_CODES = List.of(
-            new String[] {"usc", "usc"},
-            new String[] {"cfr", "cfr"},
-            new String[] {"wyostatann", "wy"},
-            new String[] {"wyostat", "wy"},
-            new String[] {"ws", "wy"});
-
     private static final String NUMBER = "\\d+(?:[-.]\\d+){0,3}[a-z]?";
     private static final String SUBSECTIONS = "(?:\\([A-Za-z0-9]{1,5}\\))*";
+    private static final String REPORTERS = Reporter.alternation(Reporter.KNOWN);
     private static final Pattern CITE = Regex.ignoringCase("(?:(?<title>\\d{1,2})\\s+)?"
-            + "(?:(?<reporter>w\\.?\\s?s\\.?|wyo\\.?\\s?stat\\.?(?:\\s?ann\\.?)?|u\\.?\\s?s\\.?\\s?c\\.?|c\\.?\\s?f\\.?\\s?r\\.?)"
+            + "(?:(?<![A-Za-z])(?<reporter>" + REPORTERS + ")"
             + "|(?<word>sections?|secs?\\.?|§{1,2}))"
             + "\\s*(?:§{1,2}\\s*)?"
             + "(?<number>" + NUMBER + ")"
-            + "(?<subs>" + SUBSECTIONS + ")");
+            + "(?<subs>" + SUBSECTIONS + ")"
+            + "(?:,\\s*(?<trailing>" + REPORTERS + ")(?![A-Za-z]))?");
     private static final Pattern SEPARATED = Regex.compile("\\d[-.]\\d");
-    private static final Pattern NOT_LETTER = Regex.compile("[^a-z]");
 
     private Citations() {}
 
@@ -65,13 +61,7 @@ public final class Citations {
         if (raw == null) {
             return LOCAL_REPORTER;
         }
-        String squashed = NOT_LETTER.matcher(Text.lower(raw)).replaceAll("");
-        for (String[] code : REPORTER_CODES) {
-            if (squashed.equals(code[0])) {
-                return code[1];
-            }
-        }
-        return squashed.isEmpty() ? LOCAL_REPORTER : squashed;
+        return Reporter.codeFor(raw, Reporter.KNOWN).orElse(LOCAL_REPORTER);
     }
 
     /** Every citation in {@code text}, left to right. */
@@ -79,9 +69,10 @@ public final class Citations {
         List<Citation> found = new ArrayList<>();
         Matcher match = CITE.matcher(text);
         while (match.find()) {
-            String reporter = reporterCode(match.group("reporter"));
+            String leading = match.group("reporter");
+            String reporter = reporterCode(leading != null ? leading : match.group("trailing"));
             String title = match.group("title");
-            if (title != null && reporter.equals(LOCAL_REPORTER)) {
+            if (title != null && leading == null) {
                 // A bare number in front of "section" is a count, not a title.
                 continue;
             }

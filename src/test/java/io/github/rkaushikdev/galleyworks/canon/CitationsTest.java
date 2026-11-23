@@ -105,4 +105,61 @@ class CitationsTest {
     void dottedNumberingIsRecognised() {
         assertThat(rewrite("section 15.04.020")).isEqualTo("cite local 15.04.020");
     }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"Mont. Code Ann. § 85-2-101", "MCA 85-2-101", "section 85-2-101, MCA", "Mont Code Ann 85-2-101"})
+    void montanaCitationsCollapseToOneForm(String text) {
+        assertThat(rewrite(text)).isEqualTo("cite mt 85-2-101");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"N.D.C.C. § 61-04-01", "N.D. Cent. Code 61-04-01", "section 61-04-01, NDCC"})
+    void northDakotaCitationsCollapseToOneForm(String text) {
+        assertThat(rewrite(text)).isEqualTo("cite nd 61-04-01");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"C.R.S. 35-65-101", "Colo. Rev. Stat. § 35-65-101", "section 35-65-101, C.R.S."})
+    void coloradoCitationsCollapseToOneForm(String text) {
+        assertThat(rewrite(text)).isEqualTo("cite co 35-65-101");
+    }
+
+    @Test
+    void aTrailingReporterIsConsumedWithItsComma() {
+        assertThat(rewrite("under section 85-2-101(a), MCA, the department shall act"))
+                .isEqualTo("under cite mt 85-2-101(a), the department shall act");
+    }
+
+    @Test
+    void aTrailingWordThatIsNoReporterStaysOutsideTheCitation() {
+        assertThat(rewrite("section 85-2-101, made")).isEqualTo("cite local 85-2-101, made");
+        assertThat(rewrite("section 85-2-101, MCAT")).isEqualTo("cite local 85-2-101, MCAT");
+    }
+
+    @Test
+    void aReporterHasToStartAWord() {
+        assertThat(rewrite("the news 41-3-101 bulletin")).isEqualTo("the news 41-3-101 bulletin");
+    }
+
+    @Test
+    void theLeadingAndTrailingStylesOfOneStateAgree() {
+        assertThat(rewrite("as provided in section 35-65-101(b), C.R.S."))
+                .isEqualTo(rewrite("as provided in Colo. Rev. Stat. 35-65-101(b)"));
+    }
+
+    @Test
+    void aTrailingReporterIsRecordedOnTheCitation() {
+        String text = "see section 61-04-01(2), N.D.C.C. here";
+        Citations.Citation citation = Citations.findCitations(text).getFirst();
+        assertThat(citation.reporter()).isEqualTo("nd");
+        assertThat(citation.subsections()).isEqualTo("(2)");
+        assertThat(citation.title()).isEmpty();
+        assertThat(citation.span().sliceOf(text)).isEqualTo("section 61-04-01(2), N.D.C.C.");
+    }
+
+    @Test
+    void aCountBeforeATrailingStyleCitationIsNotATitle() {
+        assertThat(Citations.findCitations("amends 3 sections 85-2-101, MCA")).isEmpty();
+    }
 }
