@@ -110,4 +110,20 @@ class CliIngestTest {
     void anUnknownCommandIsAUsageError() {
         assertThat(run("nonesuch").code()).isEqualTo(EXIT_USAGE);
     }
+
+    @Test
+    void amendmentsListWhatEachSectionChanges() {
+        Cli.Result result = run("ingest", "--amendments", corpusDir(false));
+        assertThat(result.code()).isEqualTo(EXIT_OK);
+        assertThat(result.output())
+                .contains("parsed  wy/2025/lower/HB0142  enrolled")
+                .contains("        section 1 amends cite wy 41-3-101\n");
+    }
+
+    @Test
+    void amendmentsAreNotListedUnlessAskedFor() {
+        assertThat(run("ingest", corpusDir(false)).output()).doesNotContain("amends");
+        assertThat(run("ingest", "--quiet", "--amendments", corpusDir(false)).output())
+                .doesNotContain("amends");
+    }
 }
