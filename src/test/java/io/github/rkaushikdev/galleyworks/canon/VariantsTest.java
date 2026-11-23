@@ -94,4 +94,66 @@ class VariantsTest {
         String text = "the licences and licencing rules";
         assertThat(rewrite(text)).isEqualTo(text);
     }
+
+    @ParameterizedTest
+    @CsvSource({
+        "the chairman of the board, the chair of the board",
+        "the Chairwoman shall preside, the chair shall preside",
+        "the chairperson shall preside, the chair shall preside",
+        "a fireman or policeman, a firefighter or police officer",
+        "the workmen employed, the workers employed"
+    })
+    void genderNeutralTitlesFoldToOneForm(String written, String folded) {
+        assertThat(rewrite(written)).isEqualTo(folded);
+    }
+
+    @Test
+    void pairedPronounsFoldToTheFormTheyReplaced() {
+        assertThat(rewrite("the appropriator shall file his or her statement if he or she holds a right"))
+                .isEqualTo("the appropriator shall file his statement if he holds a right");
+        assertThat(rewrite("unless she or he notifies him or her and recuses himself or herself"))
+                .isEqualTo("unless he notifies him and recuses himself");
+        assertThat(rewrite("his  or\nher statement")).isEqualTo("his statement");
+    }
+
+    @Test
+    void aCodeBeforeAndAfterItsGenderNeutralRevisionCanonicalizesAlike() {
+        String before = Profiles.canonicalize("(a)  The chairman shall file his report with the policeman on duty.")
+                .text();
+        String after = Profiles.canonicalize(
+                        "(a)  The chair shall file his or her report with the police officer on duty.")
+                .text();
+        assertThat(before).isEqualTo(after);
+    }
+
+    @Test
+    void aRevisedWordInsideALongerWordIsLeftAlone() {
+        String text = "the chairmanship of the policemanual and heroes";
+        assertThat(rewrite(text)).isEqualTo(text);
+        assertThat(rewrite("other or shepherd")).isEqualTo("other or shepherd");
+    }
+
+    @Test
+    void theRevisionTableIsLowercaseAndFoldsOnce() {
+        assertThat(Variants.REVISIONS.keySet())
+                .allSatisfy(key -> assertThat(key).isEqualTo(Text.lower(key)));
+        for (String folded : new HashSet<>(Variants.REVISIONS.values())) {
+            assertThat(Variants.canonicalRevision(folded)).isEqualTo(folded);
+        }
+        assertThat(Variants.canonicalRevision("His  or HER")).isEqualTo("his");
+        assertThat(Variants.canonicalRevision("the board")).isEqualTo("the board");
+    }
+
+    @Test
+    void theSpellingTableHasNoPairThatFoldsToItself() {
+        assertThat(Variants.VARIANTS)
+                .allSatisfy((variant, preferred) -> assertThat(variant).isNotEqualTo(preferred));
+        assertThat(Variants.VARIANTS).containsEntry("judgement", "judgment").hasSize(26);
+    }
+
+    @Test
+    void revisionsAreSwitchedOffWithTheSpellings() {
+        String text = "the chairman shall act";
+        assertThat(rewrite(text, new CanonConfig().withFoldVariants(false))).isEqualTo(text);
+    }
 }
