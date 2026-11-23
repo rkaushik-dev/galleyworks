@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class EnrolledLexTest {
 
@@ -173,5 +174,69 @@ class EnrolledLexTest {
     @Test
     void theFirstLineCanBeALabel() {
         assertThat(kinds("(a)  first thing.\n")).containsExactly(LineKind.SUBSECTION);
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {"Sec. 4.  text | 4", "§ 4.  text | 4", "Section 4a.  text | 4a", "SECTION 12-A.  text | 12-A"})
+    void everySectionOpenerIsRead(String line, String label) {
+        LexLine lexed = EnrolledLex.lexLines(line).getFirst();
+        assertThat(lexed.kind()).isSameAs(LineKind.SECTION);
+        assertThat(lexed.label()).isEqualTo(label);
+        assertThat(lexed.body().orElseThrow().sliceOf(line)).isEqualTo("text");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Section 41-3-101 is amended to read:", "Sec. 4.5 of the code applies.", "Sections 4."})
+    void aCitationAtTheMarginIsNoSectionOpener(String line) {
+        assertThat(kinds(line)).containsExactly(LineKind.TEXT);
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "ARTICLE 3 | article 3",
+                "ARTICLE III. WATER COMMISSIONERS | article III",
+                "Part 2: Fees | part 2",
+                "PART 12A | part 12A"
+            })
+    void articleAndPartHeadingsAreLabelled(String line, String label) {
+        LexLine lexed = EnrolledLex.lexLines(line).getFirst();
+        assertThat(lexed.kind()).isSameAs(LineKind.ARTICLE);
+        assertThat(lexed.label()).isEqualTo(label);
+        assertThat(lexed.hasLabel()).isTrue();
+    }
+
+    @Test
+    void anArticleHeadingKeepsItsTitleAsTheBody() {
+        String line = "ARTICLE III.  WATER COMMISSIONERS";
+        assertThat(EnrolledLex.lexLines(line).getFirst().body().orElseThrow().sliceOf(line))
+                .isEqualTo("WATER COMMISSIONERS");
+        assertThat(EnrolledLex.lexLines("ARTICLE 3")
+                        .getFirst()
+                        .body()
+                        .orElseThrow()
+                        .isEmpty())
+                .isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Article 3 of this chapter applies to every district.",
+                "Part of the fee is refundable.",
+                "article 3",
+                "ARTICLES 3"
+            })
+    void proseThatStartsLikeAnArticleIsText(String line) {
+        assertThat(kinds(line)).containsExactly(LineKind.TEXT);
+    }
+
+    @Test
+    void anArticleHeadingHasToOpenABlock() {
+        assertThat(kinds("The board shall act under\nARTICLE 3\n")).containsExactly(LineKind.TEXT, LineKind.TEXT);
+        assertThat(kinds("The board shall act.\n\nARTICLE 3\n")).containsExactly(LineKind.TEXT, LineKind.ARTICLE);
     }
 }

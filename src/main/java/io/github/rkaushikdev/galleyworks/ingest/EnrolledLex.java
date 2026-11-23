@@ -15,7 +15,11 @@ import java.util.regex.Pattern;
  * Line lexer for enrolled bill text.
  *
  * <p>Enrolled text is line oriented and the structure lives in the left margin: a section opener,
- * a statute catchline, and parenthesised labels that nest. The lexer only classifies lines and
+ * a statute catchline, and parenthesised labels that nest. A section opener is printed {@code
+ * Section 4.}, {@code SECTION 4.}, {@code Sec. 4.} or {@code § 4.}, and a section added between two
+ * others by amendment carries a letter, {@code Section 4a.} or {@code Section 12-A.}. A long act
+ * groups its sections under {@code ARTICLE 3} or {@code PART 2} headings, which are read only when
+ * they stand on a line of their own after a blank line, as a heading does. The lexer only classifies lines and
  * records their spans; deciding what nests inside what is the parser's job, because that decision
  * needs lookahead the lexer does not have. The awkward case is {@code (i)}, the ninth subsection
  * label and the first roman paragraph label: the lexer reports it as ambiguous and refuses to
@@ -23,7 +27,10 @@ import java.util.regex.Pattern;
  */
 public final class EnrolledLex {
 
-    private static final Pattern SECTION = Regex.ignoringCase("^Section\\s+(?<label>\\d+)\\s*\\.\\s*");
+    private static final Pattern SECTION = Regex.ignoringCase(
+            "^(?:Section|Sec\\.|§)\\s*(?<label>\\d{1,4}[A-Za-z]?(?:-[A-Za-z0-9]{1,3})?)\\s*\\.(?!\\d)\\s*");
+    private static final Pattern ARTICLE = Regex.compile("^(?<word>ARTICLE|Article|PART|Part)\\s+"
+            + "(?<label>[IVXLC]{1,7}|\\d{1,3}[A-Z]?)(?:\\s*[.:]\\s*(?<heading>\\S.*?))?\\s*$");
     private static final Pattern CATCHLINE = Regex.compile("^(?<label>\\d+(?:-\\w+)+)\\s*\\.\\s+\\S");
     private static final Pattern LABEL = Regex.compile("^\\((?<label>[A-Za-z0-9]{1,6})\\)\\s*");
     private static final Pattern TITLE = Regex.compile("^AN ACT\\b");
@@ -42,6 +49,7 @@ public final class EnrolledLex {
         BLANK("blank"),
         TITLE("title"),
         ENACTING("enacting"),
+        ARTICLE("article"),
         SECTION("section"),
         CATCHLINE("catchline"),
         SUBSECTION("subsection"),
@@ -52,7 +60,7 @@ public final class EnrolledLex {
         TEXT("text");
 
         private static final Set<LineKind> LABELLED =
-                EnumSet.of(SECTION, SUBSECTION, AMBIGUOUS_LABEL, PARAGRAPH, SUBPARAGRAPH, ITEM);
+                EnumSet.of(ARTICLE, SECTION, SUBSECTION, AMBIGUOUS_LABEL, PARAGRAPH, SUBPARAGRAPH, ITEM);
 
         private final String value;
 
@@ -148,23 +156,12 @@ public final class EnrolledLex {
             int number, String stripped, TextSpan span, int indent, int start, boolean atBlockStart) {
         Matcher section = SECTION.matcher(stripped);
         if (section.lookingAt()) {
-            return new LexLine(
-                    number,
-                    LineKind.SECTION,
-                    span,
-                    indent,
-                    section.group("label"),
-                    Optional.of(new TextSpan(start + section.end(), span.end())));
+            return opened(number, LineKind.SECTION, span, indent, section.group("label"), start + section.end());
         }
         Matcher catchline = CATCHLINE.matcher(stripped);
         if (catchline.lookingAt()) {
-            return new LexLine(
-                    number,
-                    LineKind.CATCHLINE,
-                    span,
-                    indent,
-                    catchline.group("label"),
-                    Optional.of(new TextSpan(start + catchline.end() - 1, span.end())));
+            return opened(
+                    number, LineKind.CATCHLINE, span, indent, catchline.group("label"), start + catchline.end() - 1);
         }
         if (TITLE.matcher(stripped).lookingAt()) {
             return new LexLine(number, LineKind.TITLE, span, indent);
@@ -172,21 +169,26 @@ public final class EnrolledLex {
         if (ENACTING.matcher(stripped).lookingAt()) {
             return new LexLine(number, LineKind.ENACTING, span, indent);
         }
-        if (atBlockStart) {
-            Matcher labelled = LABEL.matcher(stripped);
-            if (labelled.lookingAt()) {
-                LineKind kind = classifyLabel(labelled.group("label"));
-                if (kind != LineKind.TEXT) {
-                    return new LexLine(
-                            number,
-                            kind,
-                            span,
-                            indent,
-                            labelled.group("label"),
-                            Optional.of(new TextSpan(start + labelled.end(), span.end())));
-                }
+        if (!atBlockStart) {
+            return new LexLine(number, LineKind.TEXT, span, indent);
+        }
+        Matcher article = ARTICLE.matcher(stripped);
+        if (article.matches()) {
+            String label = Text.lower(article.group("word")) + " " + article.group("label");
+            int heading = article.group("heading") == null ? span.end() : start + article.start("heading");
+            return opened(number, LineKind.ARTICLE, span, indent, label, heading);
+        }
+        Matcher labelled = LABEL.matcher(stripped);
+        if (labelled.lookingAt()) {
+            LineKind kind = classifyLabel(labelled.group("label"));
+            if (kind != LineKind.TEXT) {
+                return opened(number, kind, span, indent, labelled.group("label"), start + labelled.end());
             }
         }
         return new LexLine(number, LineKind.TEXT, span, indent);
+    }
+
+    private static LexLine opened(int number, LineKind kind, TextSpan span, int indent, String label, int bodyStart) {
+        return new LexLine(number, kind, span, indent, label, Optional.of(new TextSpan(bodyStart, span.end())));
     }
 }

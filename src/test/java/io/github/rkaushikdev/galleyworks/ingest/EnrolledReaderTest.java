@@ -176,4 +176,86 @@ class EnrolledReaderTest {
         assertThat(instrument.effectiveDate()).contains(LocalDate.of(2025, 7, 1));
         assertThat(read().introducedOn()).isEmpty();
     }
+
+    private static final String ARTICLED =
+            """
+            AN ACT relating to water commissioners.
+
+            Be It Enacted by the Legislature of the State of Wyoming:
+
+            Section 1.  Short title.  This act is the water commissioner act.
+
+            ARTICLE I.  APPOINTMENT
+
+            Section 2.  The board shall appoint a water commissioner for each district.
+
+            (a)  The commissioner serves at the pleasure of the board.
+
+            Section 3.  A commissioner shall reside in the district.
+
+            ARTICLE II.  DUTIES
+
+            Section 4.  The commissioner shall regulate headgates.
+
+            ARTICLE III.  RESERVED
+            """;
+
+    private Instrument readArticled() {
+        return new EnrolledReader().read(Fixtures.makeSource(ARTICLED));
+    }
+
+    @Test
+    void articlesBecomeSegmentsThatHoldTheirSections() {
+        Instrument instrument = readArticled();
+        assertThat(instrument.bodySegments().stream()
+                        .map(segment -> segment.path().printed()))
+                .containsExactly("1", "article I", "2", "2(a)", "3", "article II", "4", "article III");
+        Segment first = instrument.bodySegments().get(1);
+        assertThat(first.kind()).isSameAs(SegmentKind.ARTICLE);
+        assertThat(first.heading()).isEqualTo("APPOINTMENT");
+        assertThat(instrument.childrenOf(first.index()).stream()
+                        .map(segment -> segment.path().printed()))
+                .containsExactly("2", "3");
+    }
+
+    @Test
+    void aSectionBeforeTheFirstArticleStandsAlone() {
+        Instrument instrument = readArticled();
+        Segment opening = instrument.bodySegments().getFirst();
+        assertThat(opening.kind()).isSameAs(SegmentKind.SECTION);
+        assertThat(opening.parent()).isEmpty();
+    }
+
+    @Test
+    void aSectionStopsWhereTheNextArticleStarts() {
+        Instrument instrument = readArticled();
+        Segment third = instrument.bodySegments().stream()
+                .filter(segment -> segment.path().printed().equals("3"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(third.textOf(instrument)).isEqualTo("Section 3.  A commissioner shall reside in the district.");
+        Segment duties = instrument.bodySegments().get(5);
+        assertThat(duties.textOf(instrument)).startsWith("ARTICLE II.").endsWith("regulate headgates.");
+    }
+
+    @Test
+    void anArticleWithNoSectionsIsStillRead() {
+        Instrument instrument = readArticled();
+        Segment reserved = instrument.bodySegments().getLast();
+        assertThat(reserved.heading()).isEqualTo("RESERVED");
+        assertThat(instrument.childrenOf(reserved.index())).isEmpty();
+        assertThat(Blocks.splitArticles(ARTICLED, EnrolledLex.lexLines(ARTICLED)))
+                .extracting(Blocks.ArticleBlock::label)
+                .containsExactly("article I", "article II", "article III");
+    }
+
+    @Test
+    void aBillWithoutArticlesKeepsItsSectionsAtTheTop() {
+        assertThat(read().bodySegments().stream()
+                        .filter(segment -> segment.kind() == SegmentKind.SECTION)
+                        .allMatch(segment -> segment.parent().isEmpty()))
+                .isTrue();
+        assertThat(Blocks.splitArticles(WATER_BILL, EnrolledLex.lexLines(WATER_BILL)))
+                .isEmpty();
+    }
 }

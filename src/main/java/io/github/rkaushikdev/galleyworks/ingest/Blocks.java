@@ -6,10 +6,12 @@ import io.github.rkaushikdev.galleyworks.util.Text;
 import io.github.rkaushikdev.galleyworks.util.TextSpan;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
- * Cutting lexed lines into numbered sections. The split is deliberately dumb: a section starts at
- * a {@code Section N.} line and ends where the next one starts.
+ * Cutting lexed lines into articles and numbered sections. The split is deliberately dumb: a
+ * section starts at a {@code Section N.} line and ends where the next section or article starts,
+ * and an article starts at its heading and ends where the next article starts.
  */
 public final class Blocks {
 
@@ -36,16 +38,26 @@ public final class Blocks {
         }
     }
 
+    /**
+     * One article or part heading and the stretch of the act it governs.
+     *
+     * @param label the printed word and number, such as {@code article III}
+     * @param heading the heading printed after the number, or empty
+     * @param span from the heading to the next article, without trailing whitespace
+     */
+    public record ArticleBlock(String label, String heading, TextSpan span) {
+
+        /** True when {@code block} begins inside this article. */
+        public boolean holds(SectionBlock block) {
+            return span.start() <= block.span().start() && block.span().start() < span.end();
+        }
+    }
+
     /** Cut the lexed lines into numbered sections. */
     public static List<SectionBlock> splitSections(String text, List<LexLine> lines) {
-        List<LexLine> openers =
-                lines.stream().filter(line -> line.kind() == LineKind.SECTION).toList();
         List<SectionBlock> blocks = new ArrayList<>();
-        for (int position = 0; position < openers.size(); position++) {
-            LexLine opener = openers.get(position);
-            int following = position + 1 < openers.size()
-                    ? openers.get(position + 1).span().start()
-                    : text.length();
+        for (LexLine opener : openers(lines, LineKind.SECTION)) {
+            int following = nextStart(text, lines, opener, Set.of(LineKind.SECTION, LineKind.ARTICLE));
             List<LexLine> owned = lines.stream()
                     .filter(line -> opener.span().start() <= line.span().start()
                             && line.span().start() < following)
@@ -57,6 +69,32 @@ public final class Blocks {
                     owned));
         }
         return blocks;
+    }
+
+    /** Cut the lexed lines into articles; an act printed without them has none. */
+    public static List<ArticleBlock> splitArticles(String text, List<LexLine> lines) {
+        List<ArticleBlock> blocks = new ArrayList<>();
+        for (LexLine opener : openers(lines, LineKind.ARTICLE)) {
+            int following = nextStart(text, lines, opener, Set.of(LineKind.ARTICLE));
+            String heading =
+                    opener.body().map(body -> Text.strip(body.sliceOf(text))).orElse("");
+            blocks.add(new ArticleBlock(
+                    opener.label(), heading, new TextSpan(opener.span().start(), trimEnd(text, following))));
+        }
+        return blocks;
+    }
+
+    private static List<LexLine> openers(List<LexLine> lines, LineKind kind) {
+        return lines.stream().filter(line -> line.kind() == kind).toList();
+    }
+
+    /** Where the first line of one of {@code kinds} after {@code opener} starts, else the end. */
+    private static int nextStart(String text, List<LexLine> lines, LexLine opener, Set<LineKind> kinds) {
+        return lines.stream()
+                .filter(line -> line.span().start() > opener.span().start() && kinds.contains(line.kind()))
+                .mapToInt(line -> line.span().start())
+                .findFirst()
+                .orElse(text.length());
     }
 
     private static String headingFor(String text, List<LexLine> lines) {
