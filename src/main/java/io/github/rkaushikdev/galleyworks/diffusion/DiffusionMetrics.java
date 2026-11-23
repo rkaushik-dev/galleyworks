@@ -10,11 +10,13 @@ import java.util.OptionalLong;
 import java.util.Set;
 
 /**
- * What one family looks like once it is measured: how far the language travelled, across how many
- * jurisdictions, over how long.
+ * What one family looks like once it is measured: how far the language travelled, how many
+ * jurisdictions adopted it and how often they came back to it, over how long. Adopters are counted
+ * once each, by {@link Adoption}, however many times a legislature re-enacts the text.
  *
  * @param members instruments in the family
- * @param jurisdictions distinct jurisdictions among them
+ * @param jurisdictions distinct jurisdictions among them, which is the number of adopters
+ * @param reenactments members enacted in a jurisdiction that had already adopted the language
  * @param edges edges inside the family
  * @param directedEdges edges the dates oriented
  * @param characters reused characters across every edge
@@ -24,6 +26,7 @@ import java.util.Set;
 public record DiffusionMetrics(
         int members,
         int jurisdictions,
+        int reenactments,
         int edges,
         int directedEdges,
         int characters,
@@ -38,7 +41,7 @@ public record DiffusionMetrics(
         return OptionalLong.of(ChronoUnit.DAYS.between(first.get(), last.get()));
     }
 
-    /** True when the family never left one jurisdiction. */
+    /** True when the family never left one jurisdiction: one adopter, however many enactments. */
     public boolean isSingleJurisdiction() {
         return jurisdictions <= 1;
     }
@@ -51,11 +54,11 @@ public record DiffusionMetrics(
                 .toList();
         List<LocalDate> dates =
                 members.stream().map(graph::dateOf).flatMap(Optional::stream).toList();
-        Set<String> jurisdictions = new HashSet<>();
-        members.forEach(member -> jurisdictions.add(member.jurisdiction()));
+        List<Adoption> adoptions = Adoption.adoptions(graph, lineage);
         return new DiffusionMetrics(
                 members.size(),
-                jurisdictions.size(),
+                adoptions.size(),
+                adoptions.stream().mapToInt(Adoption::reenactments).sum(),
                 edges.size(),
                 (int) edges.stream().filter(ReuseEdge::directed).count(),
                 edges.stream().mapToInt(ReuseEdge::characters).sum(),

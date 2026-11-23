@@ -4,6 +4,7 @@ import io.github.rkaushikdev.galleyworks.Engine;
 import io.github.rkaushikdev.galleyworks.InstrumentKey;
 import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
 import io.github.rkaushikdev.galleyworks.RunResult;
+import io.github.rkaushikdev.galleyworks.diffusion.Adoption;
 import io.github.rkaushikdev.galleyworks.diffusion.DiffusionMetrics;
 import io.github.rkaushikdev.galleyworks.diffusion.Lineage;
 import io.github.rkaushikdev.galleyworks.diffusion.ReuseGraph;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.SortedMap;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
@@ -66,6 +68,9 @@ public final class DiffusionCommand extends Common.Base {
     @Option(names = "--reduce", description = "drop edges a longer path implies")
     boolean reduceEdges;
 
+    @Option(names = "--by-year", description = "print how many jurisdictions had adopted by each year")
+    boolean byYear;
+
     @Option(
             names = "--dot",
             paramLabel = "FILE",
@@ -89,7 +94,10 @@ public final class DiffusionCommand extends Common.Base {
         OptionalLong span = metrics.spanDays();
         String reach = metrics.characters() + " characters across " + metrics.edges() + " edges";
         List<String> lines = new ArrayList<>();
-        lines.add("family of " + lineage.size() + " across " + String.join(", ", lineage.jurisdictions()));
+        String again = metrics.reenactments() == 0
+                ? ""
+                : ", " + metrics.reenactments() + " of them re-enacting earlier adoptions";
+        lines.add("family of " + lineage.size() + " across " + String.join(", ", lineage.jurisdictions()) + again);
         lines.add("  earliest: " + root + " (" + confidence + ")");
         lines.add(
                 span.isPresent()
@@ -103,12 +111,16 @@ public final class DiffusionCommand extends Common.Base {
         return lines;
     }
 
-    /** One line per member, in the order the text reached them. */
+    /**
+     * One line per member, in the order the text reached them. A member from a jurisdiction that had
+     * already adopted the language is marked as a re-enactment, because it is not a new adopter.
+     */
     public static List<String> renderTimeline(ReuseGraph graph, Lineage lineage) {
         List<Timeline.TimelineStep> steps = Timeline.timeline(graph, lineage);
         if (steps.isEmpty()) {
             return List.of();
         }
+        List<Adoption> adoptions = Adoption.adoptions(graph, lineage);
         Timeline.TimelineStep origin = steps.getFirst();
         List<String> lines = new ArrayList<>();
         lines.add("  timeline:");
@@ -120,9 +132,21 @@ public final class DiffusionCommand extends Common.Base {
                     ? "origin"
                     : step.inheritedCharacters() + " characters from "
                             + step.sources().size() + " source(s)";
-            lines.add("    " + when + offset + "  " + step.key().slug() + "  " + inherited);
+            String again = Adoption.isReenactment(adoptions, step.key()) ? ", re-enacted" : "";
+            lines.add("    " + when + offset + "  " + step.key().slug() + "  " + inherited + again);
         }
         return lines;
+    }
+
+    /** {@code adopted: 2023 1, 2024 2}: how many jurisdictions had adopted by the end of each year. */
+    public static String renderCurve(ReuseGraph graph, Lineage lineage) {
+        SortedMap<Integer, Integer> curve = Adoption.curve(Adoption.adoptions(graph, lineage));
+        if (curve.isEmpty()) {
+            return "  adopted: no dated adoptions";
+        }
+        List<String> years = new ArrayList<>();
+        curve.forEach((year, total) -> years.add(year + " " + total));
+        return "  adopted: " + String.join(", ", years);
     }
 
     @Override
@@ -147,6 +171,9 @@ public final class DiffusionCommand extends Common.Base {
                     ? Optional.empty()
                     : Optional.of(Spread.tally(graph, lineage, jurisdictions));
             describe(lineage, DiffusionMetrics.measure(graph, lineage), spread).forEach(this::line);
+            if (byYear) {
+                line(renderCurve(graph, lineage));
+            }
             if (showTimeline) {
                 renderTimeline(graph, lineage).forEach(this::line);
             }
