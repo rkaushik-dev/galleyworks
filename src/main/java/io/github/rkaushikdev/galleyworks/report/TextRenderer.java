@@ -104,18 +104,28 @@ public final class TextRenderer {
         return renderText(report, width, Optional.empty(), DEFAULT_MAX_PASSAGES);
     }
 
-    /** Render a report for a terminal. */
-    public static String renderText(InstrumentReport report, int width, Optional<Integer> maxMatches, int maxPassages) {
+    /**
+     * The heading block: the instrument, its title, when the report was built, the totals, and one
+     * line per jurisdiction the reused text was found in.
+     */
+    private static List<String> header(InstrumentReport report, int width) {
         ReportSummary summary = report.summary();
         String title = Shared.flow(report.title());
-        List<String> lines = new ArrayList<>(List.of(
-                "lexdrift report for " + report.key().slug(),
-                title.substring(0, Math.min(title.length(), Math.max(0, width))),
-                RULE.repeat(Math.min(width, RULE_WIDTH)),
-                "generated " + Timestamps.isoformatSeconds(report.generatedAt()),
-                summary.matchedSegments() + " of " + summary.totalSegments() + " segments matched, "
-                        + summary.reusedCharacters() + " characters reused (" + Floats.percent(summary.reuseRatio(), 1)
-                        + " of the document) across " + summary.otherInstruments() + " other instruments"));
+        List<String> lines = new ArrayList<>();
+        lines.add("lexdrift report for " + report.key().slug());
+        lines.add(title.substring(0, Math.min(title.length(), Math.max(0, width))));
+        lines.add(RULE.repeat(Math.min(width, RULE_WIDTH)));
+        lines.add("generated " + Timestamps.isoformatSeconds(report.generatedAt()));
+        lines.add(summary.matchedSegments() + " of " + summary.totalSegments() + " segments matched, "
+                + summary.reusedCharacters() + " characters reused (" + Floats.percent(summary.reuseRatio(), 1)
+                + " of the document) across " + summary.otherInstruments() + " other instruments");
+        SourceShare.of(report).forEach(share -> lines.add("  from " + share.describe()));
+        return lines;
+    }
+
+    /** Render a report for a terminal. */
+    public static String renderText(InstrumentReport report, int width, Optional<Integer> maxMatches, int maxPassages) {
+        List<String> lines = header(report, width);
         if (report.isEmpty()) {
             lines.add("no reuse found");
             return String.join("\n", fit(lines, width)) + "\n";

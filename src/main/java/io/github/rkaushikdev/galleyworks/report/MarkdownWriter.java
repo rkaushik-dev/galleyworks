@@ -63,6 +63,21 @@ public final class MarkdownWriter {
         return lines;
     }
 
+    /** The table of jurisdictions the reused text was found in, the largest share first. */
+    private static List<String> sources(InstrumentReport report) {
+        List<String> lines = new ArrayList<>(List.of(
+                "## Sources",
+                "",
+                "| jurisdiction | characters | findings | instruments |",
+                "| --- | --- | --- | --- |"));
+        for (SourceShare share : SourceShare.of(report)) {
+            lines.add("| " + escapeCell(share.jurisdiction()) + " | " + share.characters() + " | " + share.findings()
+                    + " | " + share.instruments() + " |");
+        }
+        lines.add("");
+        return lines;
+    }
+
     /** Render a report as markdown with three passages per finding. */
     public static String toMarkdown(InstrumentReport report) {
         return toMarkdown(report, 3);
@@ -92,6 +107,7 @@ public final class MarkdownWriter {
             lines.add("No reuse found.");
             return String.join("\n", lines) + "\n";
         }
+        lines.addAll(sources(report));
         lines.add("## Findings");
         lines.add("");
         for (int index = 0; index < report.matches().size(); index++) {
