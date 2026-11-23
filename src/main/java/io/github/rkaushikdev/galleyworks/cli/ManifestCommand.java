@@ -5,6 +5,7 @@ import io.github.rkaushikdev.galleyworks.Context;
 import io.github.rkaushikdev.galleyworks.Corpus;
 import io.github.rkaushikdev.galleyworks.IngestError;
 import io.github.rkaushikdev.galleyworks.Instrument;
+import io.github.rkaushikdev.galleyworks.ingest.Keys;
 import io.github.rkaushikdev.galleyworks.ingest.ReaderRegistry;
 import io.github.rkaushikdev.galleyworks.util.Text;
 import java.io.IOException;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -26,9 +28,11 @@ import picocli.CommandLine.Parameters;
 /**
  * {@code lexdrift manifest}: turn a directory of documents into a manifest.
  *
- * <p>Discovery from file names is convenient and lossy: it cannot record a chamber, a pinned reader
- * or a title, and a file that does not follow the convention is skipped on every run. Writing a
- * manifest once turns those decisions into something that is reviewed and version controlled.
+ * <p>Discovery from file names is convenient and lossy: it cannot record a chamber, a pinned reader,
+ * a title or a date, and a file that does not follow the convention is skipped on every run. Writing
+ * a manifest once turns those decisions into something that is reviewed and version controlled. The
+ * enacted and introduced dates it writes are the ones parsed from the text, and a date corrected in
+ * the manifest afterwards is the one every later run uses.
  */
 @Command(
         name = "manifest",
@@ -132,17 +136,26 @@ public final class ManifestCommand extends Common.Base {
         return manifest.skipped().isEmpty() ? Main.EXIT_OK : Main.EXIT_FINDINGS;
     }
 
+    /** The chamber, reader and dates parsing finds; a document no reader accepts is pinned to plaintext. */
     private static void enrich(Map<String, Object> record, ReaderRegistry registry, Corpus.Entry entry) {
-        Instrument instrument;
-        try {
-            instrument = registry.read(entry.source());
-        } catch (IngestError exc) {
+        Optional<Instrument> parsed = read(registry, entry);
+        if (parsed.isEmpty()) {
             record.put("format", "plaintext");
             return;
         }
+        Instrument instrument = parsed.get();
         record.put("chamber", instrument.key().chamber().value());
         record.put("format", instrument.sourceFormat());
-        instrument.effectiveDate().ifPresent(date -> record.put("enacted_on", date.toString()));
+        instrument.enactedOn().ifPresent(date -> record.put(Keys.ENACTED_ON, date.toString()));
+        instrument.introducedOn().ifPresent(date -> record.put(Keys.INTRODUCED_ON, date.toString()));
+    }
+
+    private static Optional<Instrument> read(ReaderRegistry registry, Corpus.Entry entry) {
+        try {
+            return Optional.of(registry.read(entry.source()));
+        } catch (IngestError exc) {
+            return Optional.empty();
+        }
     }
 
     private static String posix(Path relative) {

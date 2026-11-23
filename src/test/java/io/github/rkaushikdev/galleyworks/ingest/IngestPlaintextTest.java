@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -109,5 +110,21 @@ class IngestPlaintextTest {
     void whitespaceOnlyBlocksAreDropped() {
         Instrument instrument = new PlaintextReader().read(doc("a\n\n   \n\nb", Map.of()));
         assertThat(instrument.textFor(instrument.segments())).containsExactly("a", "b");
+    }
+
+    @Test
+    void aPlainDocumentStillReadsItsEffectiveDate() {
+        Instrument instrument =
+                new PlaintextReader().read(doc(BODY + "\n\nThis act takes effect July 1, 2025.\n", Map.of()));
+        assertThat(instrument.enactedOn()).contains(LocalDate.of(2025, 7, 1));
+        assertThat(instrument.introducedOn()).isEmpty();
+    }
+
+    @Test
+    void manifestDatesAreAppliedToAPlainDocument() {
+        Instrument instrument = new PlaintextReader()
+                .read(doc(BODY, Map.of("enacted_on", "2024-03-01", "introduced_on", LocalDate.of(2024, 1, 9))));
+        assertThat(instrument.enactedOn()).contains(LocalDate.of(2024, 3, 1));
+        assertThat(instrument.introducedOn()).contains(LocalDate.of(2024, 1, 9));
     }
 }

@@ -81,8 +81,10 @@ public final class EnrolledReader implements Reader {
         String title = document.hint("title").map(String::valueOf).orElseGet(() -> longTitle(text, lines));
         return Instrument.builder(Keys.resolveKey(document, header), title, text)
                 .segments(segments)
-                .introducedOn(header.introduced().orElse(null))
-                .enactedOn(Metadata.parseEffectiveDate(text).orElse(null))
+                .introducedOn(Keys.resolveDate(document, Keys.INTRODUCED_ON, header.introduced())
+                        .orElse(null))
+                .enactedOn(Keys.resolveDate(document, Keys.ENACTED_ON, Metadata.parseEffectiveDate(text))
+                        .orElse(null))
                 .sourceFormat(name())
                 .build();
     }

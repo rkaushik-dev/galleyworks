@@ -9,7 +9,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.rkaushikdev.galleyworks.Corpus;
 import io.github.rkaushikdev.galleyworks.Settings;
 import io.github.rkaushikdev.galleyworks.support.Cli;
+import io.github.rkaushikdev.galleyworks.support.Fixtures;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,5 +128,28 @@ class CliManifestTest {
     @Test
     void aMissingDirectoryIsAnError() {
         assertThat(run("manifest", tmp.resolve("absent").toString()).code()).isEqualTo(EXIT_ERROR);
+    }
+
+    @Test
+    void enrichmentKeepsTheIntroductionApartFromTheEnactment() {
+        Path root = Cli.mkdir(tmp.resolve("introduced"));
+        Cli.write(
+                root.resolve("wy_2025_HB0142.txt"),
+                Fixtures.WATER_BILL.replace(
+                        "HOUSE BILL NO. HB0142\n", "HOUSE BILL NO. HB0142\n\nIntroduced: January 13, 2025\n"));
+        Map<String, Object> row =
+                ManifestCommand.buildManifest(root).documents().getFirst();
+        assertThat(row).containsEntry("enacted_on", "2025-07-01").containsEntry("introduced_on", "2025-01-13");
+    }
+
+    @Test
+    void aDateCorrectedInTheManifestIsTheOneUsed() {
+        Path manifest = tmp.resolve("corpus.yaml");
+        Cli.write(
+                manifest,
+                "root: .\ndocuments:\n  - path: " + corpus.getFileName() + "/co_2025_SB0007.txt\n"
+                        + "    jurisdiction: co\n    session: '2025'\n    number: SB0007\n    enacted_on: 2026-01-01\n");
+        var instruments = Corpus.readAll(Corpus.loadManifest(manifest));
+        assertThat(instruments.getFirst().enactedOn()).contains(LocalDate.of(2026, 1, 1));
     }
 }

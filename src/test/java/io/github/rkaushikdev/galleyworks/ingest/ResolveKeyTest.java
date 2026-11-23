@@ -8,7 +8,10 @@ import io.github.rkaushikdev.galleyworks.IngestError;
 import io.github.rkaushikdev.galleyworks.InstrumentKey;
 import io.github.rkaushikdev.galleyworks.support.Fixtures;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Date;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -136,5 +139,55 @@ class ResolveKeyTest {
         InstrumentKey key =
                 Keys.resolveKey(source(Map.of("jurisdiction", "laramie", "session", "2024", "number", "ZZ12")));
         assertThat(key.chamber()).isSameAs(Chamber.LOWER);
+    }
+
+    @Test
+    void aDateHintWinsOverThePrintedDate() {
+        Optional<LocalDate> printed = Optional.of(LocalDate.of(2025, 7, 1));
+        SourceDocument document = source(Map.of("enacted_on", "2025-10-01"));
+        assertThat(Keys.resolveDate(document, Keys.ENACTED_ON, printed)).contains(LocalDate.of(2025, 10, 1));
+        assertThat(Keys.resolveDate(source(Map.of()), Keys.ENACTED_ON, printed)).isEqualTo(printed);
+        assertThat(Keys.resolveDate(source(Map.of("enacted_on", "")), Keys.ENACTED_ON, printed))
+                .isEqualTo(printed);
+    }
+
+    @Test
+    void aDateHintIsReadWhateverTheYamlMadeOfIt() {
+        Date stamp =
+                Date.from(LocalDate.of(2024, 4, 1).atStartOfDay(ZoneOffset.UTC).toInstant());
+        assertThat(Keys.resolveDate(source(Map.of("introduced_on", stamp)), Keys.INTRODUCED_ON, Optional.empty()))
+                .contains(LocalDate.of(2024, 4, 1));
+        assertThat(Keys.resolveDate(
+                        source(Map.of("introduced_on", LocalDate.of(2024, 4, 2))),
+                        Keys.INTRODUCED_ON,
+                        Optional.empty()))
+                .contains(LocalDate.of(2024, 4, 2));
+        assertThat(Keys.resolveDate(
+                        source(Map.of("introduced_on", " 2024-04-03 ")), Keys.INTRODUCED_ON, Optional.empty()))
+                .contains(LocalDate.of(2024, 4, 3));
+    }
+
+    @Test
+    void aDateHintThatIsNoDateIsRejected() {
+        assertThatThrownBy(() ->
+                        Keys.resolveDate(source(Map.of("enacted_on", "July 2025")), Keys.ENACTED_ON, Optional.empty()))
+                .isInstanceOfSatisfying(IngestError.class, caught -> {
+                    assertThat(caught.getMessage()).contains("date hint is not a date");
+                    assertThat(caught.context())
+                            .containsEntry("hint", "enacted_on")
+                            .containsEntry("value", "July 2025");
+                });
+    }
+
+    @Test
+    void theEnrolledReaderTakesTheManifestDates() {
+        SourceDocument corrected = new SourceDocument(
+                Fixtures.WATER_BILL,
+                "x",
+                Map.of("jurisdiction", "wy", "enacted_on", "2025-10-01", "introduced_on", "2025-01-13"));
+        var instrument = new EnrolledReader().read(corrected);
+        assertThat(instrument.enactedOn()).contains(LocalDate.of(2025, 10, 1));
+        assertThat(instrument.introducedOn()).contains(LocalDate.of(2025, 1, 13));
+        assertThat(new EnrolledReader().read(waterBill()).enactedOn()).contains(LocalDate.of(2025, 7, 1));
     }
 }

@@ -9,13 +9,15 @@ import io.github.rkaushikdev.galleyworks.util.Text;
 import io.github.rkaushikdev.galleyworks.util.TextSpan;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * The reader of last resort, for documents with no recognisable legislative structure: every
  * blank-line separated block becomes one section. Its sniff score is deliberately low, so anything
- * else that recognises the document wins.
+ * else that recognises the document wins. Text with no structure can still say when it takes
+ * effect, so the effective-date clause is read as it is for an enrolled bill.
  */
 public final class PlaintextReader implements Reader {
 
@@ -44,6 +46,10 @@ public final class PlaintextReader implements Reader {
         String title = document.hint("title").map(String::valueOf).orElseGet(() -> firstLine(text));
         return Instrument.builder(Keys.resolveKey(document), title, text)
                 .segments(segments)
+                .introducedOn(Keys.resolveDate(document, Keys.INTRODUCED_ON, Optional.empty())
+                        .orElse(null))
+                .enactedOn(Keys.resolveDate(document, Keys.ENACTED_ON, Metadata.parseEffectiveDate(text))
+                        .orElse(null))
                 .sourceFormat(name())
                 .build();
     }
