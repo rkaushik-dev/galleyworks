@@ -10,7 +10,7 @@ import java.util.Optional;
 /** A text source backed by instruments already in memory. */
 public final class MappingTextSource implements TextSource {
 
-    private final Map<String, String> bySlug = new HashMap<>();
+    private final Map<String, Instrument> bySlug = new HashMap<>();
 
     /** An empty source. */
     public MappingTextSource() {
@@ -24,11 +24,11 @@ public final class MappingTextSource implements TextSource {
 
     /** Make {@code instrument} available. */
     public void add(Instrument instrument) {
-        bySlug.put(instrument.key().slug(), instrument.rawText());
+        bySlug.put(instrument.key().slug(), instrument);
     }
 
     @Override
-    public Optional<String> textOf(InstrumentKey key) {
+    public Optional<Instrument> instrumentOf(InstrumentKey key) {
         return Optional.ofNullable(bySlug.get(key.slug()));
     }
 }

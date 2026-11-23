@@ -8,11 +8,18 @@ import static io.github.rkaushikdev.galleyworks.support.CorpusFixtures.makeBill;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.rkaushikdev.galleyworks.Instrument;
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
+import io.github.rkaushikdev.galleyworks.MatchConfig;
+import io.github.rkaushikdev.galleyworks.Segment;
 import io.github.rkaushikdev.galleyworks.index.MemoryIndex;
+import io.github.rkaushikdev.galleyworks.ingest.EnrolledReader;
+import io.github.rkaushikdev.galleyworks.ingest.SourceDocument;
+import io.github.rkaushikdev.galleyworks.match.Explanation;
 import io.github.rkaushikdev.galleyworks.match.Matcher;
 import io.github.rkaushikdev.galleyworks.match.SegmentMatch;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class ReportModelTest {
@@ -128,5 +135,55 @@ class ReportModelTest {
                         .getFirst()
                         .resolved())
                 .isTrue();
+    }
+
+    @Test
+    void aMappingSourceHandsBackTheWholeInstrument() {
+        MappingTextSource source = new MappingTextSource(List.of(sourceBill));
+        assertThat(source.instrumentOf(sourceBill.key())).containsSame(sourceBill);
+        assertThat(source.instrumentOf(probe.key())).isEmpty();
+    }
+
+    @Test
+    void aSubsectionTakesTheCatchlineOfItsSection() {
+        Segment subsection = probe.bodySegments().stream()
+                .filter(segment -> segment.path().printed().equals("1(a)"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(Reports.catchlineOf(probe, subsection.index())).contains("Schedule of appropriations");
+        assertThat(Reports.catchlineOf(probe, 999)).isEmpty();
+    }
+
+    @Test
+    void aSharedCatchlineIsNamedAmongTheReasons() {
+        ReportedMatch finding = resolved().matches().getFirst();
+        assertThat(finding.reasons()).contains("both sit under the catchline \"Schedule of appropriations\"");
+    }
+
+    @Test
+    void aDifferentCatchlineIsNotClaimedAsShared() {
+        String text = sourceBill.rawText().replace("Schedule of appropriations.", "Appropriation records kept.");
+        Instrument retitled = new EnrolledReader()
+                .read(new SourceDocument(text, Map.of("jurisdiction", "wy", "session", "2025", "number", "HB0142")));
+        InstrumentReport report = Reports.buildReport(probe, matches, new MappingTextSource(List.of(retitled)), FIXED);
+        assertThat(report.matches().getFirst().reasons()).noneMatch(reason -> reason.contains("catchline"));
+        assertThat(Reports.sharedCatchline(probe, matches.getFirst(), retitled)).isEmpty();
+        assertThat(Reports.sharedCatchline(probe, matches.getFirst(), sourceBill))
+                .contains("Schedule of appropriations");
+    }
+
+    @Test
+    void aSharedCatchlineStrengthensTheCase() {
+        SegmentMatch match = matches.getFirst();
+        Explanation without = Explanation.explain(match, new MatchConfig(), new JurisdictionRegistry());
+        Explanation with = Explanation.explain(
+                match, new MatchConfig(), new JurisdictionRegistry(), Optional.of("Schedule of appropriations"));
+        assertThat(with.confidence().compareTo(without.confidence())).isGreaterThanOrEqualTo(0);
+        assertThat(with.reasons()).hasSize(without.reasons().size() + 1);
+        assertThat(Reports.buildReport(probe, matches, new MappingTextSource(), FIXED)
+                        .matches()
+                        .getFirst()
+                        .reasons())
+                .noneMatch(reason -> reason.contains("catchline"));
     }
 }
