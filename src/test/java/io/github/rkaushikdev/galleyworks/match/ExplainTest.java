@@ -1,15 +1,24 @@
 package io.github.rkaushikdev.galleyworks.match;
 
 import static io.github.rkaushikdev.galleyworks.match.MatchFixtures.passage;
+import static io.github.rkaushikdev.galleyworks.support.CorpusFixtures.MODEL_CLAUSE;
+import static io.github.rkaushikdev.galleyworks.support.CorpusFixtures.makeBill;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.rkaushikdev.galleyworks.Chamber;
 import io.github.rkaushikdev.galleyworks.Engine;
+import io.github.rkaushikdev.galleyworks.EngineConfig;
+import io.github.rkaushikdev.galleyworks.GovernmentLevel;
 import io.github.rkaushikdev.galleyworks.InstrumentKey;
+import io.github.rkaushikdev.galleyworks.Jurisdiction;
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
 import io.github.rkaushikdev.galleyworks.MatchConfig;
 import io.github.rkaushikdev.galleyworks.RunResult;
+import io.github.rkaushikdev.galleyworks.index.MemoryIndex;
 import io.github.rkaushikdev.galleyworks.index.SegmentRef;
+import io.github.rkaushikdev.galleyworks.ingest.ReaderRegistry;
 import io.github.rkaushikdev.galleyworks.support.GoldenCorpus;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.LongStream;
@@ -127,5 +136,67 @@ class ExplainTest {
         RunResult result = new Engine().runOver(GoldenCorpus.goldenInstruments());
         assertThat(result.matches()).allSatisfy(match -> assertThat(Set.of(Confidence.values()))
                 .contains(Explanation.explain(match).confidence()));
+    }
+
+    private static JurisdictionRegistry montanaAndBillings() {
+        JurisdictionRegistry registry = new JurisdictionRegistry();
+        registry.add(new Jurisdiction("mt", "Montana", GovernmentLevel.STATE));
+        registry.add(new Jurisdiction("yellowstone", "Yellowstone County", GovernmentLevel.COUNTY, "mt"));
+        registry.add(new Jurisdiction("billings", "Billings", GovernmentLevel.MUNICIPAL, "yellowstone"));
+        return registry;
+    }
+
+    private static SegmentMatch between(String query, String other) {
+        return new SegmentMatch(
+                new SegmentRef(new InstrumentKey(query, "2025", Chamber.COUNCIL, "2025-14"), 0),
+                "1(a)",
+                new SegmentRef(new InstrumentKey(other, "2025", Chamber.LOWER, "HB0142"), 0),
+                "1(a)",
+                Scoring.scorePair(
+                        LongStream.range(0, 10).boxed().toList(),
+                        LongStream.range(0, 10).boxed().toList()),
+                List.of(passage(0, 400, 0, 400), passage(500, 900, 500, 900)));
+    }
+
+    @Test
+    void anOrdinanceRepeatingItsStateReadsAsCompliance() {
+        Explanation result = Explanation.explain(between("billings", "mt"), new MatchConfig(), montanaAndBillings());
+        assertThat(anyReason(result, "billings sits under mt")).isTrue();
+        assertThat(anyReason(result, "usually compliance")).isTrue();
+        assertThat(anyReason(result, "different jurisdictions")).isFalse();
+        Explanation unaware = Explanation.explain(between("billings", "mt"), new MatchConfig());
+        assertThat(unaware.confidence().compareTo(result.confidence())).isPositive();
+    }
+
+    @Test
+    void aStateTakingACitysTextIsNotDiscounted() {
+        Explanation upward = Explanation.explain(between("mt", "billings"), new MatchConfig(), montanaAndBillings());
+        assertThat(anyReason(upward, "billings sits under mt, so the language moved up"))
+                .isTrue();
+        Explanation unaware = Explanation.explain(between("mt", "billings"), new MatchConfig());
+        assertThat(upward.confidence()).isSameAs(unaware.confidence());
+    }
+
+    @Test
+    void aTableThatDoesNotKnowEitherSideChangesNothing() {
+        Explanation result = Explanation.explain(between("wy", "co"), new MatchConfig(), montanaAndBillings());
+        assertThat(result).isEqualTo(Explanation.explain(between("wy", "co"), new MatchConfig()));
+    }
+
+    @Test
+    void theEngineExplainsWithItsJurisdictionTable() {
+        JurisdictionRegistry registry = new JurisdictionRegistry();
+        registry.add(new Jurisdiction("wy", "Wyoming", GovernmentLevel.STATE));
+        registry.add(new Jurisdiction("laramie", "Laramie", GovernmentLevel.MUNICIPAL, "wy"));
+        EngineConfig config = new EngineConfig();
+        Engine engine = new Engine(config, new MemoryIndex(config), ReaderRegistry.defaultRegistry(), registry);
+        RunResult result = engine.runOver(List.of(
+                makeBill("wy", "HB0142", MODEL_CLAUSE, LocalDate.of(2023, 7, 1)),
+                makeBill("laramie", "2024-31", MODEL_CLAUSE, LocalDate.of(2024, 4, 1))));
+        assertThat(result.reportFor("laramie/2025/lower/2024-31").orElseThrow().matches())
+                .isNotEmpty()
+                .allSatisfy(match ->
+                        assertThat(match.reasons()).anyMatch(reason -> reason.contains("laramie sits under wy")));
+        assertThat(engine.jurisdictions()).isSameAs(registry);
     }
 }

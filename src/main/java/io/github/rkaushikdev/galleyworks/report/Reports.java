@@ -1,6 +1,7 @@
 package io.github.rkaushikdev.galleyworks.report;
 
 import io.github.rkaushikdev.galleyworks.Instrument;
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
 import io.github.rkaushikdev.galleyworks.MatchConfig;
 import io.github.rkaushikdev.galleyworks.match.Explanation;
 import io.github.rkaushikdev.galleyworks.match.Passage;
@@ -42,13 +43,24 @@ public final class Reports {
         return buildReport(instrument, matches, source, now, new MatchConfig());
     }
 
-    /** Resolve {@code matches} into a readable report about {@code instrument}. */
+    /** A report about {@code instrument} explained without a jurisdiction table. */
     public static InstrumentReport buildReport(
             Instrument instrument,
             Iterable<SegmentMatch> matches,
             TextSource source,
             OffsetDateTime now,
             MatchConfig matchConfig) {
+        return buildReport(instrument, matches, source, now, matchConfig, new JurisdictionRegistry());
+    }
+
+    /** Resolve {@code matches} into a readable report about {@code instrument}. */
+    public static InstrumentReport buildReport(
+            Instrument instrument,
+            Iterable<SegmentMatch> matches,
+            TextSource source,
+            OffsetDateTime now,
+            MatchConfig matchConfig,
+            JurisdictionRegistry jurisdictions) {
         List<ReportedMatch> reported = new ArrayList<>();
         List<TextSpan> covered = new ArrayList<>();
         Set<String> matchedPaths = new HashSet<>();
@@ -65,7 +77,7 @@ public final class Reports {
                 covered.add(passage.query());
             }
             matchedPaths.add(match.queryPath());
-            Explanation reasoning = Explanation.explain(match, matchConfig);
+            Explanation reasoning = Explanation.explain(match, matchConfig, jurisdictions);
             reported.add(new ReportedMatch(
                     match.queryPath(),
                     match.other().key(),

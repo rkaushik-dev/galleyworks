@@ -189,7 +189,12 @@ public final class Engine {
                 "report",
                 () -> Ranking.applyReportConfig(
                         Reports.buildReport(
-                                instrument, matches, texts, now.orElseGet(Timestamps::nowUtc), config.match()),
+                                instrument,
+                                matches,
+                                texts,
+                                now.orElseGet(Timestamps::nowUtc),
+                                config.match(),
+                                jurisdictions),
                         config.report()));
         return new Analysis(report, matches);
     }

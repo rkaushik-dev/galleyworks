@@ -1,5 +1,7 @@
 package io.github.rkaushikdev.galleyworks.match;
 
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
+import io.github.rkaushikdev.galleyworks.JurisdictionRelation;
 import io.github.rkaushikdev.galleyworks.MatchConfig;
 import io.github.rkaushikdev.galleyworks.util.Floats;
 import java.util.ArrayList;
@@ -11,8 +13,9 @@ import java.util.List;
  *
  * <p>A containment of 0.62 is not an argument. What persuades a reader is the shape of the
  * evidence: how many separate passages, how long the longest one is, whether they run in the same
- * order in both documents, and whether the instruments come from different jurisdictions. The
- * explanation is derived, never stored, from the same configuration the matcher ran under.
+ * order in both documents, and how the two enacting jurisdictions stand to each other: separate, the
+ * same, or one inside the other. The explanation is derived, never stored, from the same
+ * configuration the matcher ran under.
  *
  * @param confidence how strong the evidence is
  * @param headline the one-line verdict
@@ -38,8 +41,16 @@ public record Explanation(Confidence confidence, String headline, List<String> r
         return explain(match, new MatchConfig());
     }
 
-    /** Describe the evidence behind {@code match} under {@code settings}. */
+    /** Describe the evidence behind {@code match} under {@code settings}, knowing nothing of the hierarchy. */
     public static Explanation explain(SegmentMatch match, MatchConfig settings) {
+        return explain(match, settings, new JurisdictionRegistry());
+    }
+
+    /**
+     * Describe the evidence behind {@code match} under {@code settings}, reading from {@code
+     * jurisdictions} how the two enacting bodies stand to each other.
+     */
+    public static Explanation explain(SegmentMatch match, MatchConfig settings, JurisdictionRegistry jurisdictions) {
         double containment = match.score().bestContainment();
         int longest = match.longestPassage();
         List<String> reasons = new ArrayList<>();
@@ -69,14 +80,21 @@ public record Explanation(Confidence confidence, String headline, List<String> r
             score -= 1;
             reasons.add("the passages appear in a different order, which weakens the case");
         }
-        if (match.crossesJurisdictions()) {
-            reasons.add("the two instruments are from different jurisdictions ("
-                    + match.query().key().jurisdiction()
-                    + " and "
-                    + match.other().key().jurisdiction()
-                    + ")");
-        } else {
-            reasons.add("both instruments are from the same jurisdiction, where reuse is routine");
+        String query = match.query().key().jurisdiction();
+        String other = match.other().key().jurisdiction();
+        JurisdictionRelation relation = jurisdictions.relation(query, other);
+        reasons.add(
+                switch (relation) {
+                    case SAME -> "both instruments are from the same jurisdiction, where reuse is routine";
+                    case ENCLOSING ->
+                        query + " sits under " + other
+                                + ", and repeating the enclosing jurisdiction's text is usually compliance";
+                    case ENCLOSED ->
+                        other + " sits under " + query + ", so the language moved up from a jurisdiction inside it";
+                    case SEPARATE ->
+                        "the two instruments are from different jurisdictions (" + query + " and " + other + ")";
+                });
+        if (relation.isRoutine()) {
             score -= 1;
         }
         Confidence confidence = score >= 4 ? Confidence.STRONG : score >= 2 ? Confidence.MODERATE : Confidence.WEAK;
