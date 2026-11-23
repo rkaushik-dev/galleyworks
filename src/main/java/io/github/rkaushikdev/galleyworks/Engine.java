@@ -42,6 +42,7 @@ public final class Engine {
     private final EngineConfig config;
     private final Index index;
     private final ReaderRegistry registry;
+    private final JurisdictionRegistry jurisdictions;
     private final MappingTextSource texts = new MappingTextSource();
     private final Stopwatch stopwatch = new Stopwatch();
     private final Fingerprinter fingerprinter;
@@ -79,9 +80,18 @@ public final class Engine {
 
     /** An engine under {@code config} over {@code index}, reading with {@code registry}. */
     public Engine(EngineConfig config, Index index, ReaderRegistry registry) {
+        this(config, index, registry, new JurisdictionRegistry());
+    }
+
+    /**
+     * An engine under {@code config} over {@code index}, reading with {@code registry}, that knows
+     * from {@code jurisdictions} which jurisdiction sits inside which.
+     */
+    public Engine(EngineConfig config, Index index, ReaderRegistry registry, JurisdictionRegistry jurisdictions) {
         this.config = config;
         this.index = index;
         this.registry = registry;
+        this.jurisdictions = jurisdictions;
         this.fingerprinter = new Fingerprinter(config);
         this.standard =
                 config.match().ignoreStandardClauses() ? StandardClauses.filter(config) : new BoilerplateFilter();
@@ -101,6 +111,11 @@ public final class Engine {
     /** The readers documents are parsed with. */
     public ReaderRegistry registry() {
         return registry;
+    }
+
+    /** The jurisdiction table, empty when none was given. */
+    public JurisdictionRegistry jurisdictions() {
+        return jurisdictions;
     }
 
     /** Where other instruments' text is quoted from. */
@@ -158,7 +173,7 @@ public final class Engine {
 
     /** A matcher over the index under the current boilerplate filter. */
     public Matcher matcher() {
-        return new Matcher(index, config, boilerplate);
+        return new Matcher(index, config, boilerplate, jurisdictions);
     }
 
     /** Match one instrument and build its report, stamped now. */

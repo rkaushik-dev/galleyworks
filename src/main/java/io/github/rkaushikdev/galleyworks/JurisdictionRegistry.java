@@ -99,6 +99,24 @@ public final class JurisdictionRegistry implements Iterable<Jurisdiction> {
         return get(slug).ancestry(bySlug);
     }
 
+    /**
+     * Where {@code other} stands relative to {@code query}: the same body, one that encloses it, one
+     * it encloses, or neither. A slug the registry does not know is separate from everything but
+     * itself, because nothing says otherwise.
+     */
+    public JurisdictionRelation relation(String query, String other) {
+        if (query.equals(other)) {
+            return JurisdictionRelation.SAME;
+        }
+        if (contains(query) && ancestry(query).contains(other)) {
+            return JurisdictionRelation.ENCLOSING;
+        }
+        if (contains(other) && ancestry(other).contains(query)) {
+            return JurisdictionRelation.ENCLOSED;
+        }
+        return JurisdictionRelation.SEPARATE;
+    }
+
     /** The jurisdictions directly under {@code slug}, sorted. */
     public List<Jurisdiction> childrenOf(String slug) {
         return new ArrayList<>(new TreeSet<>(bySlug.values().stream()

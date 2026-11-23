@@ -7,7 +7,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.rkaushikdev.galleyworks.Chamber;
 import io.github.rkaushikdev.galleyworks.EngineConfig;
+import io.github.rkaushikdev.galleyworks.GovernmentLevel;
 import io.github.rkaushikdev.galleyworks.InstrumentKey;
+import io.github.rkaushikdev.galleyworks.Jurisdiction;
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
 import io.github.rkaushikdev.galleyworks.MatchConfig;
 import io.github.rkaushikdev.galleyworks.index.MemoryIndex;
 import io.github.rkaushikdev.galleyworks.index.SegmentRef;
@@ -97,5 +100,51 @@ class JurisdictionFloorTest {
     void theFloorIsNotPartOfTheIndexDigest() {
         assertThat(new EngineConfig().digest())
                 .isEqualTo(sameJurisdictionFloor(0.9).digest());
+    }
+
+    private static JurisdictionRegistry wyomingAndLaramie() {
+        JurisdictionRegistry registry = new JurisdictionRegistry();
+        registry.add(new Jurisdiction("wy", "Wyoming", GovernmentLevel.STATE));
+        registry.add(new Jurisdiction("albany-county", "Albany County", GovernmentLevel.COUNTY, "wy"));
+        registry.add(new Jurisdiction("laramie", "Laramie", GovernmentLevel.MUNICIPAL, "albany-county"));
+        registry.add(new Jurisdiction("mt", "Montana", GovernmentLevel.STATE));
+        return registry;
+    }
+
+    private static Matcher knowing(EngineConfig config) {
+        return new Matcher(wyoming(), config, new BoilerplateFilter(), wyomingAndLaramie());
+    }
+
+    @Test
+    void anOrdinanceRepeatingItsStateUsesTheHigherFloor() {
+        MatchConfig settings = new MatchConfig().withMinContainment(0.35).withSameJurisdictionContainment(0.6);
+        assertThat(Matcher.containmentFloor(ref("laramie"), ref("wy"), settings, wyomingAndLaramie()))
+                .isEqualTo(0.6);
+        assertThat(Matcher.containmentFloor(ref("laramie"), ref("wy"), settings))
+                .isEqualTo(0.35);
+    }
+
+    @Test
+    void aStateRepeatingOneOfItsCitiesKeepsThePlainFloor() {
+        MatchConfig settings = new MatchConfig().withMinContainment(0.35).withSameJurisdictionContainment(0.6);
+        assertThat(Matcher.containmentFloor(ref("wy"), ref("laramie"), settings, wyomingAndLaramie()))
+                .isEqualTo(0.35);
+        assertThat(Matcher.containmentFloor(ref("laramie"), ref("mt"), settings, wyomingAndLaramie()))
+                .isEqualTo(0.35);
+    }
+
+    @Test
+    void aPartialRepeatOfTheStateStatuteIsCompliance() {
+        var probe = makeBill("laramie", "2024-31", REWORDED);
+        assertThat(knowing(sameJurisdictionFloor(0.85)).matchInstrument(probe)).isEmpty();
+        assertThat(new Matcher(wyoming(), sameJurisdictionFloor(0.85)).matchInstrument(probe))
+                .isNotEmpty();
+    }
+
+    @Test
+    void aWholesaleRepeatOfTheStateStatuteIsStillReported() {
+        assertThat(knowing(sameJurisdictionFloor(0.85)).matchInstrument(makeBill("laramie", "2024-31", MODEL_CLAUSE)))
+                .isNotEmpty();
+        assertThat(knowing(new EngineConfig()).jurisdictions().size()).isEqualTo(4);
     }
 }

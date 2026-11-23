@@ -172,4 +172,28 @@ class JurisdictionsTest {
     void brokenYamlIsRejected() throws IOException {
         rejects("jurisdictions: [\n", "not valid YAML");
     }
+
+    @Test
+    void relationsFollowTheParentLinks() throws IOException {
+        JurisdictionRegistry registry = loaded();
+        assertThat(registry.relation("laramie", "laramie")).isSameAs(JurisdictionRelation.SAME);
+        assertThat(registry.relation("laramie", "wy")).isSameAs(JurisdictionRelation.ENCLOSING);
+        assertThat(registry.relation("laramie", "albany-county")).isSameAs(JurisdictionRelation.ENCLOSING);
+        assertThat(registry.relation("wy", "laramie")).isSameAs(JurisdictionRelation.ENCLOSED);
+        assertThat(registry.relation("wy", "mt")).isSameAs(JurisdictionRelation.SEPARATE);
+        assertThat(registry.relation("mt", "wy")).isSameAs(JurisdictionRelation.SEPARATE);
+        assertThat(new JurisdictionRegistry().relation("mt", "mt")).isSameAs(JurisdictionRelation.SAME);
+    }
+
+    @Test
+    void onlySameAndEnclosingAreRoutine() {
+        assertThat(JurisdictionRelation.SAME.isRoutine()).isTrue();
+        assertThat(JurisdictionRelation.ENCLOSING.isRoutine()).isTrue();
+        assertThat(JurisdictionRelation.ENCLOSED.isRoutine()).isFalse();
+        assertThat(JurisdictionRelation.SEPARATE.isRoutine()).isFalse();
+        assertThat(JurisdictionRelation.fromValue("enclosed")).isSameAs(JurisdictionRelation.ENCLOSED);
+        assertThat(JurisdictionRelation.SEPARATE).hasToString("separate");
+        assertThatThrownBy(() -> JurisdictionRelation.fromValue("sibling"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

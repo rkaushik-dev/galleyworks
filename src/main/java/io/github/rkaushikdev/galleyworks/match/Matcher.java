@@ -2,6 +2,8 @@ package io.github.rkaushikdev.galleyworks.match;
 
 import io.github.rkaushikdev.galleyworks.EngineConfig;
 import io.github.rkaushikdev.galleyworks.Instrument;
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
+import io.github.rkaushikdev.galleyworks.JurisdictionRelation;
 import io.github.rkaushikdev.galleyworks.MatchConfig;
 import io.github.rkaushikdev.galleyworks.fingerprint.Fingerprinter;
 import io.github.rkaushikdev.galleyworks.fingerprint.SegmentFingerprint;
@@ -42,6 +44,7 @@ public final class Matcher {
     private final Index index;
     private final EngineConfig config;
     private final BoilerplateFilter boilerplate;
+    private final JurisdictionRegistry jurisdictions;
     private final Fingerprinter fingerprinter;
 
     /** A matcher over {@code index} under the index's own configuration, with no boilerplate filter. */
@@ -56,9 +59,19 @@ public final class Matcher {
 
     /** A matcher over {@code index} under {@code config}, ignoring {@code boilerplate}. */
     public Matcher(Index index, EngineConfig config, BoilerplateFilter boilerplate) {
+        this(index, config, boilerplate, new JurisdictionRegistry());
+    }
+
+    /**
+     * A matcher over {@code index} under {@code config}, ignoring {@code boilerplate}, that knows from
+     * {@code jurisdictions} which bodies sit inside which.
+     */
+    public Matcher(
+            Index index, EngineConfig config, BoilerplateFilter boilerplate, JurisdictionRegistry jurisdictions) {
         this.index = index;
         this.config = config;
         this.boilerplate = boilerplate;
+        this.jurisdictions = jurisdictions;
         this.fingerprinter = new Fingerprinter(config);
     }
 
@@ -89,18 +102,31 @@ public final class Matcher {
         return boilerplate;
     }
 
+    /** The jurisdiction table the matcher reads the hierarchy from. */
+    public JurisdictionRegistry jurisdictions() {
+        return jurisdictions;
+    }
+
+    /** The containment a pair has to clear, knowing nothing of the hierarchy. */
+    public static double containmentFloor(SegmentRef query, SegmentRef other, MatchConfig settings) {
+        return containmentFloor(query, other, settings, new JurisdictionRegistry());
+    }
+
     /**
      * The containment a pair has to clear to be reported.
      *
      * <p>Two instruments from one jurisdiction share text as a matter of routine: a bill amends a
-     * chapter and re-prints the surrounding subsections. The floor is raised for that case rather
-     * than the finding being dropped, because a wholesale copy inside one state is still worth seeing.
+     * chapter and re-prints the surrounding subsections. So does an ordinance that repeats the
+     * statute of the state it sits in, because the city is often required to. The floor is raised
+     * for both rather than the finding being dropped, because a wholesale copy is still worth seeing.
      */
-    public static double containmentFloor(SegmentRef query, SegmentRef other, MatchConfig settings) {
-        if (query.key().jurisdiction().equals(other.key().jurisdiction())) {
-            return Math.max(settings.minContainment(), settings.sameJurisdictionContainment());
-        }
-        return settings.minContainment();
+    public static double containmentFloor(
+            SegmentRef query, SegmentRef other, MatchConfig settings, JurisdictionRegistry jurisdictions) {
+        JurisdictionRelation relation =
+                jurisdictions.relation(query.key().jurisdiction(), other.key().jurisdiction());
+        return relation.isRoutine()
+                ? Math.max(settings.minContainment(), settings.sameJurisdictionContainment())
+                : settings.minContainment();
     }
 
     /**
@@ -146,7 +172,7 @@ public final class Matcher {
             return Optional.empty();
         }
         PairScore score = Scoring.scorePair(new HashSet<>(values), new HashSet<>(otherValues));
-        if (score.bestContainment() < containmentFloor(SegmentRef.of(record), ref, settings)) {
+        if (score.bestContainment() < containmentFloor(SegmentRef.of(record), ref, settings, jurisdictions)) {
             return Optional.empty();
         }
         List<Passage> passages =

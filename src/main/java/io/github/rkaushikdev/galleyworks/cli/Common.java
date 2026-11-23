@@ -2,10 +2,12 @@ package io.github.rkaushikdev.galleyworks.cli;
 
 import io.github.rkaushikdev.galleyworks.Engine;
 import io.github.rkaushikdev.galleyworks.EngineConfig;
+import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
 import io.github.rkaushikdev.galleyworks.Settings;
 import io.github.rkaushikdev.galleyworks.canon.Profiles;
 import io.github.rkaushikdev.galleyworks.index.Index;
 import io.github.rkaushikdev.galleyworks.index.SqliteIndex;
+import io.github.rkaushikdev.galleyworks.ingest.ReaderRegistry;
 import io.github.rkaushikdev.galleyworks.match.Confidence;
 import io.github.rkaushikdev.galleyworks.report.InstrumentReport;
 import io.github.rkaushikdev.galleyworks.report.Ranking;
@@ -78,15 +80,33 @@ public final class Common {
                 description = "which reading of an amendment to index")
         String reading;
 
+        @Option(
+                names = "--jurisdiction-table",
+                paramLabel = "FILE",
+                converter = Choices.FilePath.class,
+                description = "YAML table of jurisdictions and the ones they sit under")
+        Path jurisdictionTable;
+
         /** The configuration these options ask for. */
         public EngineConfig config() {
             return buildConfig(Optional.ofNullable(config), Optional.ofNullable(profile), Optional.ofNullable(reading));
         }
 
+        /** The jurisdiction table these options name, or an empty one. */
+        public JurisdictionRegistry jurisdictions() {
+            return jurisdictionTable == null
+                    ? new JurisdictionRegistry()
+                    : JurisdictionRegistry.load(jurisdictionTable);
+        }
+
         /** A fully wired engine over the index at {@code indexPath}, or an in-memory one. */
         public Engine engine(Optional<Path> indexPath) {
             EngineConfig settings = config();
-            return new Engine(settings, buildIndex(indexPath, settings));
+            return new Engine(
+                    settings,
+                    buildIndex(indexPath, settings),
+                    ReaderRegistry.defaultRegistry(settings.ingest().amendmentReading()),
+                    jurisdictions());
         }
     }
 

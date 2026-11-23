@@ -135,4 +135,35 @@ class CliQueryTest {
         assertThat(query("mt", "--width", "60", copyPath).output().lines())
                 .allSatisfy(line -> assertThat(line.length()).isLessThanOrEqualTo(60));
     }
+
+    @Test
+    void aJurisdictionTableRaisesTheFloorForACityRepeatingItsState() {
+        String reworded = MODEL_CLAUSE
+                .replace("sixty\n(60) days", "ninety (90) days")
+                .replace(
+                        "the acreage irrigated under the appropriation",
+                        "the acreage under cultivation in the district");
+        String ordinance = Cli.write(
+                        tmp.resolve("ordinance.txt"),
+                        makeBill("laramie", "2024-31", reworded).rawText())
+                .toString();
+        String table = Cli.write(
+                        tmp.resolve("jurisdictions.yaml"),
+                        "jurisdictions:\n  - {slug: wy, name: Wyoming, level: state}\n"
+                                + "  - {slug: laramie, name: Laramie, level: municipal, parent: wy}\n")
+                .toString();
+        String config = Cli.write(tmp.resolve("strict.yaml"), "match:\n  same_jurisdiction_containment: 0.85\n")
+                .toString();
+        assertThat(query("laramie", "--config", config, ordinance).output()).contains("wy/2025/lower/HB0142");
+        assertThat(query("laramie", "--config", config, "--jurisdiction-table", table, ordinance)
+                        .output())
+                .contains("no reuse found");
+    }
+
+    @Test
+    void anUnreadableJurisdictionTableIsAnError() {
+        Cli.Result result =
+                query("mt", "--jurisdiction-table", tmp.resolve("absent.yaml").toString(), copyPath);
+        assertThat(result.code()).isEqualTo(EXIT_ERROR);
+    }
 }
