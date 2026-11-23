@@ -7,7 +7,6 @@ import io.github.rkaushikdev.galleyworks.util.Floats;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Why one match was reported, in words.
@@ -52,20 +51,17 @@ public record Explanation(Confidence confidence, String headline, List<String> r
      * jurisdictions} how the two enacting bodies stand to each other.
      */
     public static Explanation explain(SegmentMatch match, MatchConfig settings, JurisdictionRegistry jurisdictions) {
-        return explain(match, settings, jurisdictions, Optional.empty());
+        return explain(match, settings, jurisdictions, SharedContext.NONE);
     }
 
     /**
-     * Describe the evidence behind {@code match}, counting it in favour when both segments sit under
-     * the same statute catchline, {@code sharedCatchline}. A catchline is drafted with its section
-     * and travels with it, so two states printing the same one is a second, independent sign of the
-     * same source.
+     * Describe the evidence behind {@code match} with what else the two segments share. A shared
+     * statute catchline counts in favour: it is drafted with its section and travels with it, so two
+     * states printing the same one is a second, independent sign of the same source. Companion bills
+     * are named for what they are and count against, like any reuse that is expected.
      */
     public static Explanation explain(
-            SegmentMatch match,
-            MatchConfig settings,
-            JurisdictionRegistry jurisdictions,
-            Optional<String> sharedCatchline) {
+            SegmentMatch match, MatchConfig settings, JurisdictionRegistry jurisdictions, SharedContext shared) {
         double containment = match.score().bestContainment();
         int longest = match.longestPassage();
         List<String> reasons = new ArrayList<>();
@@ -112,9 +108,14 @@ public record Explanation(Confidence confidence, String headline, List<String> r
         if (relation.isRoutine()) {
             score -= 1;
         }
-        if (sharedCatchline.isPresent()) {
+        if (shared.catchline().isPresent()) {
             score += 1;
-            reasons.add("both sit under the catchline \"" + sharedCatchline.get() + "\"");
+            reasons.add("both sit under the catchline \"" + shared.catchline().get() + "\"");
+        }
+        if (shared.companions()) {
+            score -= 1;
+            reasons.add("both bills of the session amend " + String.join(", ", shared.companionProvisions())
+                    + ", as companion bills do");
         }
         Confidence confidence = score >= 4 ? Confidence.STRONG : score >= 2 ? Confidence.MODERATE : Confidence.WEAK;
         String headline = confidence.value() + " evidence that " + match.queryPath() + " reuses "

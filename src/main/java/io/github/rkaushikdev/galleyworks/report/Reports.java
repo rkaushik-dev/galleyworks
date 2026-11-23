@@ -3,13 +3,11 @@ package io.github.rkaushikdev.galleyworks.report;
 import io.github.rkaushikdev.galleyworks.Instrument;
 import io.github.rkaushikdev.galleyworks.JurisdictionRegistry;
 import io.github.rkaushikdev.galleyworks.MatchConfig;
-import io.github.rkaushikdev.galleyworks.Segment;
-import io.github.rkaushikdev.galleyworks.SegmentKind;
 import io.github.rkaushikdev.galleyworks.match.Explanation;
 import io.github.rkaushikdev.galleyworks.match.Passage;
 import io.github.rkaushikdev.galleyworks.match.SegmentMatch;
+import io.github.rkaushikdev.galleyworks.match.SharedContext;
 import io.github.rkaushikdev.galleyworks.util.Spans;
-import io.github.rkaushikdev.galleyworks.util.Text;
 import io.github.rkaushikdev.galleyworks.util.TextSpan;
 import io.github.rkaushikdev.galleyworks.util.Timestamps;
 import java.time.OffsetDateTime;
@@ -19,7 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -70,7 +67,8 @@ public final class Reports {
         Set<String> matchedPaths = new HashSet<>();
         for (SegmentMatch match : matches) {
             Optional<Instrument> other = source.instrumentOf(match.other().key());
-            Optional<String> shared = other.flatMap(found -> sharedCatchline(instrument, match, found));
+            SharedContext shared = other.map(found -> Surroundings.between(instrument, match, found))
+                    .orElse(SharedContext.NONE);
             reported.add(
                     resolve(instrument, match, other, Explanation.explain(match, matchConfig, jurisdictions, shared)));
             match.passages().forEach(passage -> covered.add(passage.query()));
@@ -109,41 +107,6 @@ public final class Reports {
                 reasoning.confidence(),
                 reasoning.headline(),
                 reasoning.reasons());
-    }
-
-    /**
-     * The statute catchline both matched segments sit under, as the query prints it, when they print
-     * the same one. A subsection has no catchline of its own and takes its section's.
-     */
-    static Optional<String> sharedCatchline(Instrument query, SegmentMatch match, Instrument other) {
-        Optional<String> mine = catchlineOf(query, match.query().segmentIndex());
-        Optional<String> theirs = catchlineOf(other, match.other().segmentIndex());
-        if (mine.isEmpty() || theirs.isEmpty() || !folded(mine.get()).equals(folded(theirs.get()))) {
-            return Optional.empty();
-        }
-        return mine;
-    }
-
-    /** The catchline of the section holding segment {@code index} of {@code instrument}, if it has one. */
-    static Optional<String> catchlineOf(Instrument instrument, int index) {
-        Optional<Segment> cursor = segment(instrument, index);
-        while (cursor.isPresent() && cursor.get().kind() != SegmentKind.SECTION) {
-            OptionalInt parent = cursor.get().parent();
-            cursor = parent.isPresent() ? segment(instrument, parent.getAsInt()) : Optional.empty();
-        }
-        return cursor.map(section -> Text.strip(section.heading()))
-                .map(heading -> heading.endsWith(".") ? heading.substring(0, heading.length() - 1) : heading)
-                .filter(heading -> !heading.isEmpty());
-    }
-
-    private static Optional<Segment> segment(Instrument instrument, int index) {
-        return instrument.segments().stream()
-                .filter(segment -> segment.index() == index)
-                .findFirst();
-    }
-
-    private static String folded(String catchline) {
-        return Text.squash(Text.lower(catchline));
     }
 
     /** A report's findings grouped by the instrument they point at, in first-seen order. */

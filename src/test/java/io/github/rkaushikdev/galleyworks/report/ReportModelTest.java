@@ -17,6 +17,7 @@ import io.github.rkaushikdev.galleyworks.ingest.SourceDocument;
 import io.github.rkaushikdev.galleyworks.match.Explanation;
 import io.github.rkaushikdev.galleyworks.match.Matcher;
 import io.github.rkaushikdev.galleyworks.match.SegmentMatch;
+import io.github.rkaushikdev.galleyworks.match.SharedContext;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -150,8 +151,8 @@ class ReportModelTest {
                 .filter(segment -> segment.path().printed().equals("1(a)"))
                 .findFirst()
                 .orElseThrow();
-        assertThat(Reports.catchlineOf(probe, subsection.index())).contains("Schedule of appropriations");
-        assertThat(Reports.catchlineOf(probe, 999)).isEmpty();
+        assertThat(Surroundings.catchlineOf(probe, subsection.index())).contains("Schedule of appropriations");
+        assertThat(Surroundings.catchlineOf(probe, 999)).isEmpty();
     }
 
     @Test
@@ -167,8 +168,9 @@ class ReportModelTest {
                 .read(new SourceDocument(text, Map.of("jurisdiction", "wy", "session", "2025", "number", "HB0142")));
         InstrumentReport report = Reports.buildReport(probe, matches, new MappingTextSource(List.of(retitled)), FIXED);
         assertThat(report.matches().getFirst().reasons()).noneMatch(reason -> reason.contains("catchline"));
-        assertThat(Reports.sharedCatchline(probe, matches.getFirst(), retitled)).isEmpty();
-        assertThat(Reports.sharedCatchline(probe, matches.getFirst(), sourceBill))
+        assertThat(Surroundings.sharedCatchline(probe, matches.getFirst(), retitled))
+                .isEmpty();
+        assertThat(Surroundings.sharedCatchline(probe, matches.getFirst(), sourceBill))
                 .contains("Schedule of appropriations");
     }
 
@@ -177,7 +179,10 @@ class ReportModelTest {
         SegmentMatch match = matches.getFirst();
         Explanation without = Explanation.explain(match, new MatchConfig(), new JurisdictionRegistry());
         Explanation with = Explanation.explain(
-                match, new MatchConfig(), new JurisdictionRegistry(), Optional.of("Schedule of appropriations"));
+                match,
+                new MatchConfig(),
+                new JurisdictionRegistry(),
+                new SharedContext(Optional.of("Schedule of appropriations"), List.of()));
         assertThat(with.confidence().compareTo(without.confidence())).isGreaterThanOrEqualTo(0);
         assertThat(with.reasons()).hasSize(without.reasons().size() + 1);
         assertThat(Reports.buildReport(probe, matches, new MappingTextSource(), FIXED)
