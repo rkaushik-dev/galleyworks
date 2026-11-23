@@ -136,4 +136,74 @@ class DiffTest {
                         result.changes().stream().mapToInt(SegmentChange::churn).sum())
                 .isPositive();
     }
+
+    private static InstrumentDiff following(String left, String right) {
+        return Diff.compare(bill(left), bill(right), Profiles.profile("verbatim"), true);
+    }
+
+    @Test
+    void followingRenumberingPairsAMovedSubsection() {
+        String left = MODEL_CLAUSE + "\n\n(b)  The board may charge a fee.";
+        String right = MODEL_CLAUSE + "\n\n(c)  The board may charge a fee.";
+        List<SegmentChange> moved = following(left, right).changes().stream()
+                .filter(change -> change.kind() == ChangeKind.RENUMBERED)
+                .toList();
+        assertThat(moved).containsExactly(SegmentChange.renumbered("1(b)", "1(c)"));
+        assertThat(moved.getFirst().churn()).isZero();
+        assertThat(moved.getFirst().similarity()).isEqualTo(1.0);
+        assertThat(following(left, right).changes())
+                .noneMatch(change -> change.kind() == ChangeKind.ADDED || change.kind() == ChangeKind.REMOVED);
+    }
+
+    @Test
+    void anInsertedSubsectionShiftsTheRestWithoutRewritingThem() {
+        String left = MODEL_CLAUSE + "\n\n(b)  The board may charge a fee.\n\n(c)  No fee applies to inspection.";
+        String right = MODEL_CLAUSE + "\n\n(b)  The board shall keep a register.\n\n(c)  The board may charge a fee."
+                + "\n\n(d)  No fee applies to inspection.";
+        Map<String, ChangeKind> kinds = following(left, right).changes().stream()
+                .filter(change -> change.path().startsWith("1("))
+                .collect(Collectors.toMap(SegmentChange::path, SegmentChange::kind));
+        assertThat(kinds)
+                .containsEntry("1(a)", ChangeKind.UNCHANGED)
+                .containsEntry("1(b)", ChangeKind.ADDED)
+                .containsEntry("1(c)", ChangeKind.RENUMBERED)
+                .containsEntry("1(d)", ChangeKind.RENUMBERED);
+        Map<ChangeKind, Long> byPath = Diff.compare(bill(left), bill(right)).changes().stream()
+                .filter(change -> change.path().startsWith("1("))
+                .collect(Collectors.groupingBy(SegmentChange::kind, Collectors.counting()));
+        assertThat(byPath).containsEntry(ChangeKind.CHANGED, 2L).containsEntry(ChangeKind.ADDED, 1L);
+    }
+
+    @Test
+    void aMovedSegmentThatWasAlsoReworded() {
+        String left = MODEL_CLAUSE + "\n\n(b)  The board may charge a fee.";
+        String right = MODEL_CLAUSE + "\n\n(c)  The board may charge a small fee.";
+        Map<String, ChangeKind> kinds = following(left, right).changes().stream()
+                .collect(Collectors.toMap(SegmentChange::path, SegmentChange::kind));
+        assertThat(kinds).containsEntry("1(b)", ChangeKind.REMOVED).containsEntry("1(c)", ChangeKind.ADDED);
+    }
+
+    @Test
+    void aPathTakenOverByAMoveStillReportsTheTextItLost() {
+        String left = MODEL_CLAUSE + "\n\n(b)  The board may charge a fee.\n\n(c)  Records are public.";
+        String right = MODEL_CLAUSE + "\n\n(c)  The board may charge a fee.";
+        List<SegmentChange> atC = following(left, right).changes().stream()
+                .filter(change -> change.path().equals("1(c)"))
+                .toList();
+        assertThat(atC).extracting(SegmentChange::kind).containsExactly(ChangeKind.RENUMBERED, ChangeKind.REMOVED);
+        assertThat(following(left, right).counts()).containsEntry("renumbered", 1);
+    }
+
+    @Test
+    void aChangeThatKeptItsPathHasNoPreviousPath() {
+        SegmentChange change =
+                Diff.compare(bill(MODEL_CLAUSE), bill(reworded()), Profiles.profile("verbatim"), true)
+                        .changes()
+                        .stream()
+                        .filter(found -> found.path().equals("1(a)"))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(change.kind()).isSameAs(ChangeKind.CHANGED);
+        assertThat(change.previousPath()).isEmpty();
+    }
 }

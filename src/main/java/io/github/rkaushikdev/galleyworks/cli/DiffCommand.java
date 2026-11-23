@@ -31,7 +31,8 @@ public final class DiffCommand extends Common.Base {
             Diff.ChangeKind.UNCHANGED, " ",
             Diff.ChangeKind.CHANGED, "~",
             Diff.ChangeKind.ADDED, "+",
-            Diff.ChangeKind.REMOVED, "-");
+            Diff.ChangeKind.REMOVED, "-",
+            Diff.ChangeKind.RENUMBERED, ">");
 
     @Parameters(index = "0", paramLabel = "LEFT")
     String left;
@@ -63,23 +64,33 @@ public final class DiffCommand extends Common.Base {
     @Option(names = "--show-unchanged", description = "list segments that did not change")
     boolean showUnchanged;
 
+    @Option(
+            names = "--follow-renumbering",
+            description = "pair a segment that moved to a new label with its earlier self")
+    boolean followRenumbering;
+
     /** One line per segment, plus a summary. */
     public static List<String> renderDiff(Diff.InstrumentDiff result, boolean showUnchanged) {
         List<String> lines = new ArrayList<>();
         lines.add(result.left() + " -> " + result.right());
         for (Diff.SegmentChange change : result.changes()) {
-            if (!change.isMaterial() && !showUnchanged) {
-                continue;
+            if (change.isMaterial() || showUnchanged) {
+                lines.add(MARKS.get(change.kind()) + " " + padded(change.path(), 16) + " "
+                        + padded(change.kind().value(), 10) + " " + detail(change));
             }
-            String detail = "similarity " + Floats.fixed(change.similarity(), 2) + ", +" + change.wordsAdded() + " -"
-                    + change.wordsRemoved() + " words";
-            lines.add(MARKS.get(change.kind()) + " " + padded(change.path(), 16) + " "
-                    + padded(change.kind().value(), 9) + " " + detail);
         }
         Map<String, Integer> counts = result.counts();
         lines.add(counts.get("changed") + " changed, " + counts.get("added") + " added, " + counts.get("removed")
-                + " removed, " + counts.get("unchanged") + " unchanged, " + result.totalChurn() + " words of churn");
+                + " removed, " + counts.get("renumbered") + " renumbered, " + counts.get("unchanged")
+                + " unchanged, " + result.totalChurn() + " words of churn");
         return lines;
+    }
+
+    private static String detail(Diff.SegmentChange change) {
+        return change.previousPath()
+                .map(from -> "from " + from)
+                .orElseGet(() -> "similarity " + Floats.fixed(change.similarity(), 2) + ", +" + change.wordsAdded()
+                        + " -" + change.wordsRemoved() + " words");
     }
 
     @Override
@@ -87,7 +98,7 @@ public final class DiffCommand extends Common.Base {
         ReaderRegistry registry = ReaderRegistry.defaultRegistry();
         Instrument before = registry.read(QueryCommand.Hints.read(left, jurisdiction, session, number));
         Instrument after = registry.read(QueryCommand.Hints.read(right, jurisdiction, session, number));
-        Diff.InstrumentDiff result = Diff.compare(before, after, Profiles.profile(profile));
+        Diff.InstrumentDiff result = Diff.compare(before, after, Profiles.profile(profile), followRenumbering);
         renderDiff(result, showUnchanged).forEach(this::line);
         return result.isIdentical() ? Main.EXIT_OK : Main.EXIT_FINDINGS;
     }

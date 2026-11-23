@@ -131,4 +131,17 @@ class CliDiffTest {
         String[] pair = pair();
         assertThat(diff(pair[0], pair[1]).code()).isEqualTo(EXIT_USAGE);
     }
+
+    @Test
+    void followingRenumberingNamesTheEarlierLabel() {
+        String left = write("before.txt", MODEL_CLAUSE + "\n\n(b)  A fee applies.");
+        String right = write("after.txt", MODEL_CLAUSE + "\n\n(c)  A fee applies.");
+        List<String> lines = diff("--follow-renumbering", "--jurisdiction", "wy", left, right)
+                .output()
+                .lines()
+                .toList();
+        assertThat(lines).anyMatch(line -> line.startsWith("> 1(c)") && line.endsWith("renumbered from 1(b)"));
+        assertThat(lines.getLast()).contains("0 added, 0 removed, 1 renumbered");
+        assertThat(diff("--jurisdiction", "wy", left, right).output()).contains("1 added, 1 removed, 0 renumbered");
+    }
 }
