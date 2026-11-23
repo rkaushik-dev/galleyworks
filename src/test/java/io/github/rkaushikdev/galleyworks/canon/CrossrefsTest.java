@@ -106,4 +106,66 @@ class CrossrefsTest {
                 .text();
         assertThat(left).isEqualTo(right);
     }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "subsection (b) of this section",
+                "paragraph (ii) of subsection (a) of this section",
+                "subparagraph (A) of paragraph (iii) of subsection (b) of this section",
+                "section 4 of this act",
+                "section 2(a) of this act",
+                "paragraphs (i) and (ii) of this subsection"
+            })
+    void aLabelledReferenceToThisInstrumentFoldsWhole(String phrase) {
+        assertThat(rewrite("as required by " + phrase + ", the board shall act"))
+                .isEqualTo("as required by " + SELF_REFERENCE + ", the board shall act");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "subsection (b)",
+                "paragraph (iii)",
+                "subparagraphs (A) through (C)",
+                "paragraphs (i), (ii) and (iv)",
+                "items (1) or (2)",
+                "subsection (b)(ii)"
+            })
+    void aLetteredLabelOnItsOwnIsInternal(String phrase) {
+        assertThat(rewrite("except as provided in " + phrase + " the fee is waived"))
+                .isEqualTo("except as provided in " + SELF_REFERENCE + " the fee is waived");
+    }
+
+    @Test
+    void reletteringDoesNotChangeTheCanonicalText() {
+        String wyoming = Profiles.canonicalize(
+                        "(c)  The fee described in paragraph (i) of subsection (b) of this section is waived.")
+                .text();
+        String montana = Profiles.canonicalize(
+                        "(d)  The fee described in paragraph (i) of subsection (c) of this section is waived.")
+                .text();
+        assertThat(wyoming).isEqualTo(montana).contains(SELF_REFERENCE);
+    }
+
+    @Test
+    void aReferenceToAnotherActKeepsItsNumber() {
+        String text = "as provided in section 4 of the water code";
+        assertThat(rewrite(text)).isEqualTo(text);
+        assertThat(rewrite("section 4 of this act and section 5 of the water code"))
+                .isEqualTo(SELF_REFERENCE + " and section 5 of the water code");
+    }
+
+    @Test
+    void aLabelThatOpensABlockIsNotAReference() {
+        String text = "(b)  The board shall publish the schedule.";
+        assertThat(rewrite(text)).isEqualTo(text);
+    }
+
+    @Test
+    void theLongestReadingWins() {
+        assertThat(new CrossReferenceRule().edits("under subsection (b) of this section", new CanonConfig()))
+                .singleElement()
+                .satisfies(edit -> assertThat(edit.span().start()).isEqualTo(6));
+    }
 }
