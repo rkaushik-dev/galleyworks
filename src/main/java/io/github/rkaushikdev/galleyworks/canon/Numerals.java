@@ -50,6 +50,11 @@ public final class Numerals {
     private static final String NUM_WORD = "(?:" + String.join("|", NUMBER_WORDS) + ")";
     private static final String WORDS = "\\b" + NUM_WORD + "(?:[\\s-]+" + NUM_WORD + ")*";
     private static final String MONTH_NAMES = String.join("|", MONTHS.keySet());
+    private static final Pattern FORMAL_DATE = Regex.ignoringCase("\\b(?:the\\s+)?(?:(?<word>" + ordinalAlternation()
+            + ")|(?<day>\\d{1,2})(?:st|nd|rd|th))\\s+day\\s+of\\s+(?<month>" + MONTH_NAMES
+            + "),?\\s+(?:in\\s+the\\s+year\\s+)?(?<year>\\d{4})\\b");
+    private static final Pattern CALENDAR_DATE = Regex.ignoringCase(
+            "\\b(?<month>" + MONTH_NAMES + ")\\s+(?<day>\\d{1,2})(?:st|nd|rd|th)?,?\\s+(?<year>\\d{4})\\b");
 
     private record NumeralPattern(String name, Pattern regex, Function<Matcher, String> render) {}
 
@@ -68,17 +73,8 @@ public final class Numerals {
                     "percent",
                     Regex.ignoringCase("(?<amount>\\d+(?:\\.\\d+)?)\\s*(?:%|per\\s?cent(?:um)?|percent)"),
                     Numerals::percent),
-            new NumeralPattern(
-                    "date-formal",
-                    Regex.ignoringCase("\\b(?:the\\s+)?(?:(?<word>" + ordinalAlternation()
-                            + ")|(?<day>\\d{1,2})(?:st|nd|rd|th))\\s+day\\s+of\\s+(?<month>" + MONTH_NAMES
-                            + "),?\\s+(?:in\\s+the\\s+year\\s+)?(?<year>\\d{4})\\b"),
-                    Numerals::date),
-            new NumeralPattern(
-                    "date",
-                    Regex.ignoringCase("\\b(?<month>" + MONTH_NAMES
-                            + ")\\s+(?<day>\\d{1,2})(?:st|nd|rd|th)?,?\\s+(?<year>\\d{4})\\b"),
-                    Numerals::date),
+            new NumeralPattern("date-formal", FORMAL_DATE, Numerals::date),
+            new NumeralPattern("date", CALENDAR_DATE, Numerals::date),
             new NumeralPattern(
                     "doubled-numeral",
                     Regex.ignoringCase(WORDS + "\\s*\\(\\s*(?<amount>[\\d,]+(?:\\.\\d+)?)\\s*\\)"),
@@ -169,12 +165,38 @@ public final class Numerals {
         return digits(match.group("amount")) + " pct";
     }
 
-    private static String date(Matcher match) {
+    private static Optional<LocalDate> dateIn(Matcher match) {
         String word = match.namedGroups().containsKey("word") ? match.group("word") : null;
         int day = word != null ? ordinalDay(word).orElseThrow() : Integer.parseInt(match.group("day"));
-        return dateOf(match.group("month"), day, Integer.parseInt(match.group("year")))
-                .map(when -> "date " + when)
-                .orElse(match.group());
+        return dateOf(match.group("month"), day, Integer.parseInt(match.group("year")));
+    }
+
+    private static String date(Matcher match) {
+        return dateIn(match).map(when -> "date " + when).orElse(match.group());
+    }
+
+    /**
+     * One date printed in the text.
+     *
+     * @param span where it is printed
+     * @param date the day it names
+     */
+    public record PrintedDate(TextSpan span, LocalDate date) {}
+
+    /** Every real date printed in {@code text}, in either form, left to right. */
+    public static List<PrintedDate> findDates(String text) {
+        List<PrintedDate> found = new ArrayList<>();
+        for (Pattern pattern : List.of(FORMAL_DATE, CALENDAR_DATE)) {
+            Matcher match = pattern.matcher(text);
+            while (match.find()) {
+                TextSpan span = new TextSpan(match.start(), match.end());
+                if (found.stream().noneMatch(seen -> seen.span().overlaps(span))) {
+                    dateIn(match).ifPresent(when -> found.add(new PrintedDate(span, when)));
+                }
+            }
+        }
+        found.sort(Comparator.comparingInt(printed -> printed.span().start()));
+        return found;
     }
 
     /** Non-overlapping edits that put every quantity into one form, left to right. */

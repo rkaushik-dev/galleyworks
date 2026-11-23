@@ -172,4 +172,14 @@ class NumeralsTest {
         assertThat(Numerals.dateOf("Smarch", 1, 2025)).isEmpty();
         assertThat(Numerals.MONTHS).containsEntry("september", 9).hasSize(12);
     }
+
+    @Test
+    void printedDatesAreFoundInBothFormsWithTheirSpans() {
+        String text = "from the first day of July, 2025 until December 31, 2026, not February 30, 2025";
+        List<Numerals.PrintedDate> dates = Numerals.findDates(text);
+        assertThat(dates.stream().map(Numerals.PrintedDate::date))
+                .containsExactly(LocalDate.of(2025, 7, 1), LocalDate.of(2026, 12, 31));
+        assertThat(dates.getFirst().span().sliceOf(text)).isEqualTo("the first day of July, 2025");
+        assertThat(dates.getLast().span().sliceOf(text)).isEqualTo("December 31, 2026");
+    }
 }

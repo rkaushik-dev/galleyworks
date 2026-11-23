@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MetadataTest {
 
@@ -114,5 +115,46 @@ class MetadataTest {
     void impossibleDatesAreRejected() {
         assertThat(Metadata.parseEffectiveDate("effective February 30, 2025")).isEmpty();
         assertThat(Metadata.parseEffectiveDate("effective Smarch 3, 2025")).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "This act takes effect July 1, 2025.",
+                "This act shall take effect on July 1, 2025.",
+                "This act is effective on the first day of July, 2025.",
+                "This act becomes effective on and after July 1, 2025.",
+                "This ordinance shall be effective from July 1st, 2025.",
+                "This act shall become effective as of the 1st day of July, 2025."
+            })
+    void everyEffectiveDateWordingIsRead(String clause) {
+        assertThat(Metadata.parseEffectiveDate("Section 9.  " + clause)).contains(LocalDate.of(2025, 7, 1));
+    }
+
+    @Test
+    void theClauseForTheWholeActWinsOverADelayedSection() {
+        String text = "Section 3.  Section 2 of this act is effective January 1, 2026.\n\n"
+                + "Section 4.  Except as provided in section 3, this act is effective July 1, 2025.";
+        assertThat(Metadata.parseEffectiveDate(text)).contains(LocalDate.of(2025, 7, 1));
+    }
+
+    @Test
+    void withoutAWholeActClauseTheFirstDatedClauseIsUsed() {
+        String text = "Section 2 is effective January 1, 2026. Section 3 is effective July 1, 2026.";
+        assertThat(Metadata.parseEffectiveDate(text)).contains(LocalDate.of(2026, 1, 1));
+    }
+
+    @Test
+    void aDateHasToFollowTheClause() {
+        assertThat(Metadata.parseEffectiveDate("Reports filed before July 1, 2025 are effective immediately."))
+                .isEmpty();
+        assertThat(Metadata.parseEffectiveDate("This act takes effect upon passage and approval, July 1, 2025."))
+                .isEmpty();
+    }
+
+    @Test
+    void anUndatedWholeActClauseDoesNotHideADatedOne() {
+        String text = "This act is effective immediately. Section 5 is effective March 1, 2026.";
+        assertThat(Metadata.parseEffectiveDate(text)).contains(LocalDate.of(2026, 3, 1));
     }
 }

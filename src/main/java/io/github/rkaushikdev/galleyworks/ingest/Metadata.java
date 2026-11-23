@@ -1,12 +1,11 @@
 package io.github.rkaushikdev.galleyworks.ingest;
 
 import io.github.rkaushikdev.galleyworks.Chamber;
+import io.github.rkaushikdev.galleyworks.canon.Numerals;
 import io.github.rkaushikdev.galleyworks.util.Regex;
 import io.github.rkaushikdev.galleyworks.util.Text;
-import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,20 +18,6 @@ import java.util.regex.Pattern;
  * publishes bills as printed.
  */
 public final class Metadata {
-
-    private static final Map<String, Integer> MONTHS = Map.ofEntries(
-            Map.entry("january", 1),
-            Map.entry("february", 2),
-            Map.entry("march", 3),
-            Map.entry("april", 4),
-            Map.entry("may", 5),
-            Map.entry("june", 6),
-            Map.entry("july", 7),
-            Map.entry("august", 8),
-            Map.entry("september", 9),
-            Map.entry("october", 10),
-            Map.entry("november", 11),
-            Map.entry("december", 12));
 
     private record ChamberWord(String words, Chamber chamber) {}
 
@@ -50,8 +35,11 @@ public final class Metadata {
             Regex.ignoringCase("(?:no\\.?|number)\\s*(?<number>[A-Z]{0,3}[- ]?\\d{1,5}(?:-\\d{1,4})?[A-Z]?)");
     private static final Pattern SESSION = Regex.compile("\\b(?<year>(?:19|20)\\d{2})\\b");
     private static final Pattern SPONSOR = Regex.ignoringCase("^sponsored by:\\s*(?<sponsor>.+)$");
-    private static final Pattern EFFECTIVE =
-            Regex.ignoringCase("effective\\s+(?<month>[A-Za-z]+)\\s+(?<day>\\d{1,2}),\\s*(?<year>\\d{4})");
+    private static final Pattern EFFECT = Regex.ignoringCase(
+            "(?<whole>(?<!\\bof\\s{1,4})\\bthis\\s+(?:act|ordinance|resolution)\\s+)?"
+                    + "(?:(?:is|shall\\s+be|becomes|shall\\s+become)\\s+)?effective\\b|\\b(?:takes|shall\\s+take)\\s+effect\\b");
+    private static final Pattern LEAD_IN =
+            Regex.ignoringCase("^[\\s,]*(?:(?:on|as\\s+of|from)\\s+(?:and\\s+after\\s+)?)?");
 
     private Metadata() {}
 
@@ -101,21 +89,37 @@ public final class Metadata {
                 Optional.ofNullable(sponsor));
     }
 
-    /** Find an {@code effective July 1, 2025} clause anywhere in the text. */
+    /**
+     * The date the instrument takes effect, from its effective-date clause.
+     *
+     * <p>The clause is written {@code is effective July 1, 2025}, {@code shall take effect on the
+     * first day of July, 2025} or {@code becomes effective on and after January 1, 2026}. An act
+     * often carries several, one for a delayed section and one for the rest, and the one that names
+     * {@code this act} as its subject is the instrument's own; without one, the first dated clause
+     * is used. A clause that takes effect on passage names no date and yields nothing.
+     */
     public static Optional<LocalDate> parseEffectiveDate(String text) {
-        Matcher match = EFFECTIVE.matcher(text);
-        if (!match.find()) {
-            return Optional.empty();
+        List<Numerals.PrintedDate> dates = Numerals.findDates(text);
+        Optional<LocalDate> first = Optional.empty();
+        Matcher clause = EFFECT.matcher(text);
+        while (clause.find()) {
+            Optional<LocalDate> dated = dateAfter(text, clause.end(), dates);
+            if (dated.isPresent() && clause.group("whole") != null) {
+                return dated;
+            }
+            if (first.isEmpty()) {
+                first = dated;
+            }
         }
-        Integer month = MONTHS.get(Text.lower(match.group("month")));
-        if (month == null) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(
-                    LocalDate.of(Integer.parseInt(match.group("year")), month, Integer.parseInt(match.group("day"))));
-        } catch (DateTimeException exc) {
-            return Optional.empty();
-        }
+        return first;
+    }
+
+    private static Optional<LocalDate> dateAfter(String text, int end, List<Numerals.PrintedDate> dates) {
+        Matcher lead = LEAD_IN.matcher(text).region(end, text.length());
+        int start = lead.lookingAt() ? lead.end() : end;
+        return dates.stream()
+                .filter(printed -> printed.span().start() == start)
+                .map(Numerals.PrintedDate::date)
+                .findFirst();
     }
 }
