@@ -22,7 +22,10 @@ public final class Keys {
      * The key for {@code document}: hints always win, then the printed header.
      *
      * <p>Jurisdiction is never inferred, because a printed bill does not reliably name the state
-     * that enacted it and guessing it would merge two corpora that must stay apart.
+     * that enacted it and guessing it would merge two corpora that must stay apart. The chamber is
+     * different: a hint names it, else the header does, else the number's prefix does, since {@code
+     * SB0007} cannot have started in the House. Only a number with no prefix falls back to the lower
+     * chamber.
      */
     public static InstrumentKey resolveKey(SourceDocument document, BillHeader printed) {
         Optional<String> session = document.hint("session").map(String::valueOf).or(printed::session);
@@ -43,20 +46,25 @@ public final class Keys {
                     "source document is missing identity hints",
                     Context.of("origin", document.origin(), "missing", String.join(",", missing)));
         }
-        Object rawChamber = document.hint("chamber").orElse(printed.chamber().orElse(Chamber.LOWER));
-        Chamber chamber;
-        if (rawChamber instanceof Chamber known) {
-            chamber = known;
-        } else {
-            try {
-                chamber = Chamber.fromValue(String.valueOf(rawChamber));
-            } catch (IllegalArgumentException exc) {
-                throw new IngestError(
-                        "source document names an unknown chamber",
-                        Context.of("origin", document.origin(), "chamber", String.valueOf(rawChamber)),
-                        exc);
-            }
-        }
+        Chamber chamber = document.hint("chamber")
+                .map(raw -> hintedChamber(document, raw))
+                .or(printed::chamber)
+                .or(() -> MeasureType.numbered(number.get()).map(MeasureType::chamber))
+                .orElse(Chamber.LOWER);
         return new InstrumentKey(jurisdiction.get(), session.get(), chamber, number.get());
+    }
+
+    private static Chamber hintedChamber(SourceDocument document, Object raw) {
+        if (raw instanceof Chamber known) {
+            return known;
+        }
+        try {
+            return Chamber.fromValue(String.valueOf(raw));
+        } catch (IllegalArgumentException exc) {
+            throw new IngestError(
+                    "source document names an unknown chamber",
+                    Context.of("origin", document.origin(), "chamber", String.valueOf(raw)),
+                    exc);
+        }
     }
 }

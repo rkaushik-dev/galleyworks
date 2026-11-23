@@ -21,18 +21,6 @@ import java.util.regex.Pattern;
  */
 public final class Metadata {
 
-    private record ChamberWord(String words, Chamber chamber) {}
-
-    private static final List<ChamberWord> CHAMBER_WORDS = List.of(
-            new ChamberWord("house bill", Chamber.LOWER),
-            new ChamberWord("house joint resolution", Chamber.LOWER),
-            new ChamberWord("senate file", Chamber.UPPER),
-            new ChamberWord("senate bill", Chamber.UPPER),
-            new ChamberWord("senate joint resolution", Chamber.UPPER),
-            new ChamberWord("council bill", Chamber.COUNCIL),
-            new ChamberWord("ordinance", Chamber.COUNCIL),
-            new ChamberWord("executive order", Chamber.EXECUTIVE));
-
     private static final Pattern NUMBER =
             Regex.ignoringCase("(?:no\\.?|number)\\s*(?<number>[A-Z]{0,3}[- ]?\\d{1,5}(?:-\\d{1,4})?[A-Z]?)");
     private static final Pattern SESSION = Regex.compile("\\b(?<year>(?:19|20)\\d{2})\\b");
@@ -72,11 +60,7 @@ public final class Metadata {
     }
 
     private static Optional<Chamber> chamberIn(String line) {
-        String lowered = Text.lower(line);
-        return CHAMBER_WORDS.stream()
-                .filter(word -> lowered.contains(word.words()))
-                .map(ChamberWord::chamber)
-                .findFirst();
+        return MeasureType.named(line).map(MeasureType::chamber);
     }
 
     private static Optional<String> numberIn(String line) {

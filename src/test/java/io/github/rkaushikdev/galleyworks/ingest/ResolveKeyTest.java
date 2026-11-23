@@ -10,6 +10,8 @@ import io.github.rkaushikdev.galleyworks.support.Fixtures;
 import java.time.LocalDate;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class ResolveKeyTest {
 
@@ -99,5 +101,40 @@ class ResolveKeyTest {
         String trimmed = Fixtures.WATER_BILL.replace("This act is effective July 1, 2025.", "This act is void.");
         SourceDocument document = new SourceDocument(trimmed, "x", Map.of("jurisdiction", "wy"));
         assertThat(new EnrolledReader().read(document).enactedOn()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "SB0007, UPPER",
+        "SF0032, UPPER",
+        "HF12, LOWER",
+        "AB-104, LOWER",
+        "LB0410, UNICAMERAL",
+        "EO 2025-04, EXECUTIVE"
+    })
+    void aPrefixedNumberNamesItsChamberWhenNothingElseDoes(String number, Chamber chamber) {
+        InstrumentKey key = Keys.resolveKey(source(Map.of("jurisdiction", "co", "session", "2025", "number", number)));
+        assertThat(key.chamber()).isSameAs(chamber);
+    }
+
+    @Test
+    void theHeaderOutranksTheNumberPrefix() {
+        BillHeader header = new BillHeader("SB0007", Chamber.LOWER, "2025");
+        assertThat(Keys.resolveKey(source(Map.of("jurisdiction", "co")), header).chamber())
+                .isSameAs(Chamber.LOWER);
+    }
+
+    @Test
+    void aChamberHintOutranksTheNumberPrefix() {
+        InstrumentKey key = Keys.resolveKey(
+                source(Map.of("jurisdiction", "co", "session", "2025", "number", "SB0007", "chamber", Chamber.LOWER)));
+        assertThat(key.chamber()).isSameAs(Chamber.LOWER);
+    }
+
+    @Test
+    void anUnknownPrefixFallsBackToTheLowerChamber() {
+        InstrumentKey key =
+                Keys.resolveKey(source(Map.of("jurisdiction", "laramie", "session", "2024", "number", "ZZ12")));
+        assertThat(key.chamber()).isSameAs(Chamber.LOWER);
     }
 }
