@@ -45,6 +45,17 @@ class ReporterTest {
     }
 
     @Test
+    void sessionLawNamesAreLookedUpApartFromTheCodes() {
+        assertThat(Reporter.sessionLawCodeFor("Wyo. Sess. Laws", Reporter.KNOWN))
+                .contains("wy");
+        assertThat(Reporter.sessionLawCodeFor("laws of montana", Reporter.KNOWN))
+                .contains("mt");
+        assertThat(Reporter.sessionLawCodeFor("W.S.", Reporter.KNOWN)).isEmpty();
+        assertThat(Reporter.codeFor("Wyo. Sess. Laws", Reporter.KNOWN)).isEmpty();
+        assertThat(new Reporter("ia", List.of("Iowa Code")).sessionLawForms()).isEmpty();
+    }
+
+    @Test
     void squashingKeepsOnlyTheLetters() {
         assertThat(Reporter.squashed("N.D. Cent. Code")).isEqualTo("ndcentcode");
         assertThat(Reporter.squashed("§ 1.")).isEmpty();

@@ -5,6 +5,7 @@ import io.github.rkaushikdev.galleyworks.util.Regex;
 import io.github.rkaushikdev.galleyworks.util.Text;
 import io.github.rkaushikdev.galleyworks.util.TextSpan;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -92,7 +93,11 @@ public final class Citations {
         return found;
     }
 
-    /** Rewrites recognised citations into their canonical form. */
+    /**
+     * Rewrites recognised citations, to the code and to the session laws, into their canonical
+     * forms. Where a session law reference and a code citation overlap, the session law wins: in
+     * {@code chapter 42, Laws of 2023} the chapter is not a section of anything.
+     */
     public static final class CitationRule implements Rule {
 
         @Override
@@ -105,9 +110,19 @@ public final class Citations {
             if (!config.normalizeCitations()) {
                 return List.of();
             }
-            return findCitations(text).stream()
-                    .map(citation -> new Edit(citation.span(), citation.canonical()))
-                    .toList();
+            List<Edit> edits = new ArrayList<>();
+            List<TextSpan> claimed = new ArrayList<>();
+            for (SessionLaws.SessionLaw law : SessionLaws.findSessionLaws(text)) {
+                edits.add(new Edit(law.span(), law.canonical()));
+                claimed.add(law.span());
+            }
+            for (Citation citation : findCitations(text)) {
+                if (claimed.stream().noneMatch(citation.span()::overlaps)) {
+                    edits.add(new Edit(citation.span(), citation.canonical()));
+                }
+            }
+            edits.sort(Comparator.comparingInt(edit -> edit.span().start()));
+            return edits;
         }
     }
 }

@@ -16,34 +16,43 @@ import java.util.regex.Pattern;
  * <p>Each code has one short form the canonical citation records and several printed forms a
  * drafter may use for it: Montana cites {@code MCA} and {@code Mont. Code Ann.}, North Dakota
  * {@code N.D.C.C.} and {@code N.D. Cent. Code}, Colorado {@code C.R.S.} and {@code Colo. Rev.
- * Stat.}. A printed form is matched with its periods and the space after each period optional,
- * because a re-typeset bill drops them as often as it keeps them.
+ * Stat.}. A state also publishes its session laws, the acts as passed in each session, under a name
+ * of their own: {@code Wyo. Sess. Laws}, {@code Laws of Montana}. A printed form is matched with its
+ * periods and the space after each period optional, because a re-typeset bill drops them as often
+ * as it keeps them.
  *
  * @param code the short form written in the canonical citation
- * @param printedForms the abbreviations a drafter prints, with their periods
+ * @param printedForms the abbreviations of the code a drafter prints, with their periods
+ * @param sessionLawForms the names the state's session laws are printed under
  */
-public record Reporter(String code, List<String> printedForms) {
+public record Reporter(String code, List<String> printedForms, List<String> sessionLawForms) {
 
     /** Every code the citation rule recognises. */
     public static final List<Reporter> KNOWN = List.of(
             new Reporter("usc", List.of("U.S.C.")),
             new Reporter("cfr", List.of("C.F.R.")),
-            new Reporter("wy", List.of("W.S.", "Wyo. Stat. Ann.", "Wyo. Stat.")),
-            new Reporter("mt", List.of("MCA", "Mont. Code Ann.")),
-            new Reporter("nd", List.of("N.D.C.C.", "N.D. Cent. Code")),
-            new Reporter("co", List.of("C.R.S.", "Colo. Rev. Stat.")));
+            new Reporter("wy", List.of("W.S.", "Wyo. Stat. Ann.", "Wyo. Stat."), List.of("Wyo. Sess. Laws")),
+            new Reporter("mt", List.of("MCA", "Mont. Code Ann."), List.of("Mont. Laws", "Laws of Montana")),
+            new Reporter("nd", List.of("N.D.C.C.", "N.D. Cent. Code"), List.of("N.D. Sess. Laws")),
+            new Reporter("co", List.of("C.R.S.", "Colo. Rev. Stat."), List.of("Colo. Sess. Laws")));
 
     private static final Pattern NOT_LETTER = Regex.compile("[^a-z]");
 
     /** Validates the code and requires at least one printed form. */
     public Reporter {
         printedForms = List.copyOf(printedForms);
+        sessionLawForms = List.copyOf(sessionLawForms);
         if (!code.matches("[a-z]{2,8}")) {
             throw new ConfigError("reporter code must be two to eight lowercase letters", Context.of("code", code));
         }
         if (printedForms.isEmpty()) {
             throw new ConfigError("reporter needs a printed form", Context.of("code", code));
         }
+    }
+
+    /** A code whose session laws are not cited by name. */
+    public Reporter(String code, List<String> printedForms) {
+        this(code, printedForms, List.of());
     }
 
     /** {@code raw} lowercased with everything but letters removed: {@code N.D. Cent. Code} reads {@code ndcentcode}. */
@@ -76,20 +85,37 @@ public record Reporter(String code, List<String> printedForms) {
     public static String alternation(List<Reporter> reporters) {
         List<String> forms = new ArrayList<>();
         reporters.forEach(reporter -> forms.addAll(reporter.printedForms()));
+        return alternationOf(forms);
+    }
+
+    /** One alternation over every session law name in {@code reporters}, longest first. */
+    public static String sessionLawAlternation(List<Reporter> reporters) {
+        List<String> forms = new ArrayList<>();
+        reporters.forEach(reporter -> forms.addAll(reporter.sessionLawForms()));
+        return alternationOf(forms);
+    }
+
+    private static String alternationOf(List<String> forms) {
         forms.sort(Comparator.comparingInt(String::length).reversed().thenComparing(Comparator.naturalOrder()));
         return String.join("|", forms.stream().map(Reporter::patternFor).toList());
     }
 
     /** The code {@code printed} abbreviates, among {@code reporters}. */
     public static Optional<String> codeFor(String printed, List<Reporter> reporters) {
+        return lookup(printed, reporters, false);
+    }
+
+    /** The code whose session laws are printed as {@code printed}, among {@code reporters}. */
+    public static Optional<String> sessionLawCodeFor(String printed, List<Reporter> reporters) {
+        return lookup(printed, reporters, true);
+    }
+
+    private static Optional<String> lookup(String printed, List<Reporter> reporters, boolean sessionLaws) {
         String wanted = squashed(printed);
-        for (Reporter reporter : reporters) {
-            for (String form : reporter.printedForms()) {
-                if (squashed(form).equals(wanted)) {
-                    return Optional.of(reporter.code());
-                }
-            }
-        }
-        return Optional.empty();
+        return reporters.stream()
+                .filter(reporter -> (sessionLaws ? reporter.sessionLawForms() : reporter.printedForms())
+                        .stream().anyMatch(form -> squashed(form).equals(wanted)))
+                .map(Reporter::code)
+                .findFirst();
     }
 }
