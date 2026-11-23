@@ -7,6 +7,8 @@ import io.github.rkaushikdev.galleyworks.util.Text;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,7 +36,9 @@ public final class Metadata {
     private static final Pattern NUMBER =
             Regex.ignoringCase("(?:no\\.?|number)\\s*(?<number>[A-Z]{0,3}[- ]?\\d{1,5}(?:-\\d{1,4})?[A-Z]?)");
     private static final Pattern SESSION = Regex.compile("\\b(?<year>(?:19|20)\\d{2})\\b");
-    private static final Pattern SPONSOR = Regex.ignoringCase("^sponsored by:\\s*(?<sponsor>.+)$");
+    private static final Pattern SPONSOR = Regex.ignoringCase("^(?:sponsored|introduced) by:?\\s*(?<sponsor>.+)$");
+    private static final Pattern INTRODUCED =
+            Regex.ignoringCase("^(?:introduced|prefiled|first\\s+reading)(?:\\s+on)?\\s*:?\\s*");
     private static final Pattern EFFECT = Regex.ignoringCase(
             "(?<whole>(?<!\\bof\\s{1,4})\\bthis\\s+(?:act|ordinance|resolution)\\s+)?"
                     + "(?:(?:is|shall\\s+be|becomes|shall\\s+become)\\s+)?effective\\b|\\b(?:takes|shall\\s+take)\\s+effect\\b");
@@ -43,50 +47,70 @@ public final class Metadata {
 
     private Metadata() {}
 
-    /** Scan the opening lines of a bill for its printed identity. */
+    /**
+     * Scan the opening lines of a bill for its printed identity and history.
+     *
+     * <p>Each field is taken from the first line that carries it, with one dependency: the number is
+     * only read on or after the line naming the kind of bill, because a header prints the drafting
+     * office's job number ({@code 23LSO-0142}) above the bill number and the two look alike.
+     */
     public static BillHeader readHeader(List<String> lines) {
-        String number = null;
-        Chamber chamber = null;
-        String session = null;
-        String sponsor = null;
-        for (String raw : lines) {
-            String line = Text.strip(raw);
-            if (line.isEmpty()) {
-                continue;
-            }
-            String lowered = Text.lower(line);
-            if (chamber == null) {
-                for (ChamberWord word : CHAMBER_WORDS) {
-                    if (lowered.contains(word.words())) {
-                        chamber = word.chamber();
-                        break;
-                    }
-                }
-            }
-            if (number == null && chamber != null) {
-                Matcher match = NUMBER.matcher(line);
-                if (match.find()) {
-                    number = match.group("number").replace(" ", "").replace("-", "");
-                }
-            }
-            if (sponsor == null) {
-                Matcher sponsored = SPONSOR.matcher(line);
-                if (sponsored.lookingAt()) {
-                    sponsor = Text.strip(sponsored.group("sponsor"));
-                }
-            }
-            if (session == null) {
-                Matcher year = SESSION.matcher(line);
-                if (year.find()) {
-                    session = year.group("year");
-                }
+        List<String> printed =
+                lines.stream().map(Text::strip).filter(line -> !line.isEmpty()).toList();
+        int chamberLine = firstLine(printed, line -> chamberIn(line).isPresent());
+        Optional<Chamber> chamber = chamberLine < 0 ? Optional.empty() : chamberIn(printed.get(chamberLine));
+        Optional<String> number = chamberLine < 0
+                ? Optional.empty()
+                : firstOf(printed.subList(chamberLine, printed.size()), Metadata::numberIn);
+        return new BillHeader(
+                number,
+                chamber,
+                firstOf(printed, line -> group(SESSION.matcher(line), "year", false)),
+                firstOf(printed, line -> group(SPONSOR.matcher(line), "sponsor", true)
+                        .map(Text::strip)),
+                firstOf(printed, Metadata::introducedIn));
+    }
+
+    private static Optional<Chamber> chamberIn(String line) {
+        String lowered = Text.lower(line);
+        return CHAMBER_WORDS.stream()
+                .filter(word -> lowered.contains(word.words()))
+                .map(ChamberWord::chamber)
+                .findFirst();
+    }
+
+    private static Optional<String> numberIn(String line) {
+        return group(NUMBER.matcher(line), "number", false)
+                .map(found -> found.replace(" ", "").replace("-", ""));
+    }
+
+    /** The date on an {@code Introduced: January 10, 2024} or {@code Prefiled December 1, 2023} line. */
+    private static Optional<LocalDate> introducedIn(String line) {
+        Matcher label = INTRODUCED.matcher(line);
+        if (!label.lookingAt()) {
+            return Optional.empty();
+        }
+        return Numerals.findDates(line).stream()
+                .filter(printed -> printed.span().start() == label.end())
+                .map(Numerals.PrintedDate::date)
+                .findFirst();
+    }
+
+    private static Optional<String> group(Matcher match, String name, boolean anchored) {
+        return (anchored ? match.lookingAt() : match.find()) ? Optional.of(match.group(name)) : Optional.empty();
+    }
+
+    private static int firstLine(List<String> lines, Predicate<String> test) {
+        for (int position = 0; position < lines.size(); position++) {
+            if (test.test(lines.get(position))) {
+                return position;
             }
         }
-        return new BillHeader(
-                Optional.ofNullable(number),
-                Optional.ofNullable(chamber),
-                Optional.ofNullable(session),
-                Optional.ofNullable(sponsor));
+        return -1;
+    }
+
+    private static <T> Optional<T> firstOf(List<String> lines, Function<String, Optional<T>> reader) {
+        return lines.stream().map(reader).flatMap(Optional::stream).findFirst();
     }
 
     /**

@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.rkaushikdev.galleyworks.Chamber;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -156,5 +158,61 @@ class MetadataTest {
     void anUndatedWholeActClauseDoesNotHideADatedOne() {
         String text = "This act is effective immediately. Section 5 is effective March 1, 2026.";
         assertThat(Metadata.parseEffectiveDate(text)).contains(LocalDate.of(2026, 3, 1));
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Introduced: January 10, 2024",
+                "INTRODUCED January 10, 2024",
+                "Introduced on January 10, 2024",
+                "Prefiled: January 10, 2024",
+                "First Reading: the tenth day of January, 2024"
+            })
+    void theIntroductionDateIsRead(String line) {
+        assertThat(Metadata.readHeader(List.of("HOUSE BILL NO. HB0142", line)).introduced())
+                .contains(LocalDate.of(2024, 1, 10));
+    }
+
+    @Test
+    void introducedByNamesTheSponsorAndNoDate() {
+        BillHeader header = Metadata.readHeader(List.of("Introduced by: Representative Larsen", "2024"));
+        assertThat(header.sponsor()).contains("Representative Larsen");
+        assertThat(header.introduced()).isEmpty();
+    }
+
+    @Test
+    void aDateElsewhereInTheHeaderIsNotTheIntroduction() {
+        BillHeader header = Metadata.readHeader(List.of("HOUSE BILL NO. HB0142", "Amends acts of January 10, 2024"));
+        assertThat(header.introduced()).isEmpty();
+        assertThat(header.session()).contains("2024");
+    }
+
+    @Test
+    void theFirstIntroductionLineWins() {
+        BillHeader header = Metadata.readHeader(List.of("Prefiled: December 1, 2023", "Introduced: January 10, 2024"));
+        assertThat(header.introduced()).contains(LocalDate.of(2023, 12, 1));
+    }
+
+    @Test
+    void theJobNumberAboveTheBillIsNotItsNumber() {
+        BillHeader header = Metadata.readHeader(List.of("NO. 23LSO-0142", "HOUSE BILL NO. HB0142"));
+        assertThat(header.number()).contains("HB0142");
+        assertThat(Metadata.readHeader(List.of("HOUSE BILL", "NO. HB0142")).number())
+                .contains("HB0142");
+    }
+
+    @Test
+    void aWholeHeaderCarriesItsIntroductionDate() {
+        List<String> lines = new ArrayList<>(FRONT);
+        lines.add("Introduced: January 10, 2025");
+        BillHeader header = Metadata.readHeader(lines);
+        assertThat(header)
+                .isEqualTo(new BillHeader(
+                        Optional.of("HB0142"),
+                        Optional.of(Chamber.LOWER),
+                        Optional.of("2025"),
+                        Optional.of("Joint Agriculture Committee"),
+                        Optional.of(LocalDate.of(2025, 1, 10))));
     }
 }

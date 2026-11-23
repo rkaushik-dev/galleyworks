@@ -11,6 +11,7 @@ import io.github.rkaushikdev.galleyworks.Segment;
 import io.github.rkaushikdev.galleyworks.SegmentKind;
 import io.github.rkaushikdev.galleyworks.ingest.Blocks.SectionBlock;
 import io.github.rkaushikdev.galleyworks.support.Fixtures;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -163,5 +164,16 @@ class EnrolledReaderTest {
                     .isLessThanOrEqualTo(instrument.rawText().length());
             assertThat(segment.span().sliceOf(instrument.rawText()).strip()).isNotEmpty();
         }
+    }
+
+    @Test
+    void theIntroductionDateIsKeptBesideTheEffectiveDate() {
+        String text = WATER_BILL.replace(
+                "HOUSE BILL NO. HB0142\n", "HOUSE BILL NO. HB0142\n\nIntroduced: January 13, 2025\n");
+        Instrument instrument = new EnrolledReader().read(Fixtures.makeSource(text));
+        assertThat(instrument.introducedOn()).contains(LocalDate.of(2025, 1, 13));
+        assertThat(instrument.enactedOn()).contains(LocalDate.of(2025, 7, 1));
+        assertThat(instrument.effectiveDate()).contains(LocalDate.of(2025, 7, 1));
+        assertThat(read().introducedOn()).isEmpty();
     }
 }
