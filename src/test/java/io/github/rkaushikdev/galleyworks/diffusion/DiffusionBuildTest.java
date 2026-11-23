@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.rkaushikdev.galleyworks.Chamber;
 import io.github.rkaushikdev.galleyworks.Instrument;
 import io.github.rkaushikdev.galleyworks.InstrumentKey;
+import io.github.rkaushikdev.galleyworks.diffusion.GraphBuilder.Chronology;
 import io.github.rkaushikdev.galleyworks.diffusion.GraphBuilder.Orientation;
 import io.github.rkaushikdev.galleyworks.index.MemoryIndex;
 import io.github.rkaushikdev.galleyworks.match.Matcher;
@@ -15,6 +16,7 @@ import io.github.rkaushikdev.galleyworks.match.SegmentMatch;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class DiffusionBuildTest {
@@ -110,5 +112,78 @@ class DiffusionBuildTest {
         Instrument later = makeBill("mt", "HB0311", MODEL_CLAUSE);
         ReuseGraph graph = GraphBuilder.buildGraph(matches(earlier, later), List.of(earlier, later));
         assertThat(graph.edges().getFirst().directed()).isFalse();
+    }
+
+    private static final LocalDate JULY = LocalDate.of(2025, 7, 1);
+
+    private static Chronology dated(LocalDate effective, LocalDate introduced) {
+        return new Chronology(Optional.ofNullable(effective), Optional.ofNullable(introduced));
+    }
+
+    private static Instrument introduced(Instrument bill, LocalDate when) {
+        return new Instrument(
+                bill.key(),
+                bill.title(),
+                bill.rawText(),
+                bill.segments(),
+                Optional.of(when),
+                bill.enactedOn(),
+                bill.sourceFormat());
+    }
+
+    @Test
+    void aSharedEffectiveDateDefersToTheEarlierIntroduction() {
+        Orientation oriented = GraphBuilder.orient(
+                WY, MT, dated(JULY, LocalDate.of(2025, 2, 3)), dated(JULY, LocalDate.of(2025, 1, 14)));
+        assertThat(oriented).isEqualTo(new Orientation(MT, WY, true));
+    }
+
+    @Test
+    void theEffectiveDateStillDecidesBeforeTheIntroduction() {
+        Orientation oriented = GraphBuilder.orient(
+                WY,
+                MT,
+                dated(LocalDate.of(2024, 7, 1), LocalDate.of(2024, 2, 1)),
+                dated(JULY, LocalDate.of(2023, 1, 1)));
+        assertThat(oriented).isEqualTo(new Orientation(WY, MT, true));
+    }
+
+    @Test
+    void aSharedDayWithOneIntroductionUnknownStaysUndirected() {
+        assertThat(GraphBuilder.orient(WY, MT, dated(JULY, LocalDate.of(2025, 2, 3)), dated(JULY, null))
+                        .directed())
+                .isFalse();
+        assertThat(GraphBuilder.orient(WY, MT, dated(JULY, JULY.minusMonths(5)), dated(JULY, JULY.minusMonths(5))))
+                .isEqualTo(new Orientation(MT, WY, false));
+    }
+
+    @Test
+    void anIntroductionAloneCannotStandInForAMissingEffectiveDate() {
+        assertThat(GraphBuilder.orient(
+                                WY, MT, dated(null, LocalDate.of(2025, 1, 2)), dated(JULY, LocalDate.of(2025, 1, 9)))
+                        .directed())
+                .isFalse();
+        assertThat(Chronology.UNKNOWN.effective()).isEmpty();
+        assertThat(Chronology.effectiveOn(JULY).introduced()).isEmpty();
+    }
+
+    @Test
+    void theBuiltGraphOrientsSameDayActsByIntroduction() {
+        Instrument wyoming = introduced(makeBill("wy", "HB0142", MODEL_CLAUSE, JULY), LocalDate.of(2025, 2, 20));
+        Instrument montana = introduced(makeBill("mt", "HB0311", MODEL_CLAUSE, JULY), LocalDate.of(2025, 1, 6));
+        ReuseGraph graph = GraphBuilder.buildGraph(matches(montana, wyoming), List.of(montana, wyoming));
+        ReuseEdge edge = graph.edges().getFirst();
+        assertThat(edge.directed()).isTrue();
+        assertThat(edge.source().jurisdiction()).isEqualTo("mt");
+        assertThat(graph.introducedOn(montana.key())).contains(LocalDate.of(2025, 1, 6));
+        assertThat(Lineage.lineages(graph).getFirst().root()).contains(montana.key());
+    }
+
+    @Test
+    void theReducedGraphKeepsTheIntroductionDates() {
+        Instrument wyoming = introduced(makeBill("wy", "HB0142", MODEL_CLAUSE, JULY), LocalDate.of(2025, 2, 20));
+        ReuseGraph graph = GraphBuilder.buildGraph(List.of(), List.of(wyoming));
+        assertThat(DiffusionMetrics.transitiveReduction(graph).introducedOn(wyoming.key()))
+                .contains(LocalDate.of(2025, 2, 20));
     }
 }

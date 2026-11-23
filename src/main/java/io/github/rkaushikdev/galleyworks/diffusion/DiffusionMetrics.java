@@ -67,7 +67,7 @@ public record DiffusionMetrics(
     public static ReuseGraph transitiveReduction(ReuseGraph graph) {
         ReuseGraph reduced = new ReuseGraph();
         for (InstrumentKey member : graph.nodes()) {
-            reduced.note(member, graph.dateOf(member));
+            reduced.note(member, graph.dateOf(member), graph.introducedOn(member));
         }
         for (ReuseEdge edge : graph.edges()) {
             if (edge.directed() && reaches(graph, edge.source(), edge.target(), edge.pair())) {

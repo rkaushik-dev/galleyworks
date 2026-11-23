@@ -83,22 +83,25 @@ public record Lineage(
         return found;
     }
 
-    /** The earliest dated instrument among {@code members}, ties broken on the slug. */
+    /**
+     * The earliest dated instrument among {@code members}. Two that took effect the same day are
+     * ordered by introduction, an introduced one before one whose introduction is not known, and the
+     * slug breaks what is left, which is the order {@link GraphBuilder} orients edges in.
+     */
     public static Optional<InstrumentKey> earliest(ReuseGraph graph, Iterable<InstrumentKey> members) {
-        InstrumentKey best = null;
-        LocalDate bestDate = null;
-        for (InstrumentKey member : members) {
-            Optional<LocalDate> when = graph.dateOf(member);
-            if (when.isEmpty()) {
-                continue;
+        Comparator<InstrumentKey> order = Comparator.comparing(
+                        (InstrumentKey member) -> graph.dateOf(member).orElseThrow())
+                .thenComparing(
+                        member -> graph.introducedOn(member),
+                        Comparator.comparing((Optional<LocalDate> when) -> when.orElse(LocalDate.MAX)))
+                .thenComparing(InstrumentKey::slug);
+        List<InstrumentKey> dated = new ArrayList<>();
+        members.forEach(member -> {
+            if (graph.dateOf(member).isPresent()) {
+                dated.add(member);
             }
-            int order = bestDate == null ? -1 : when.get().compareTo(bestDate);
-            if (order < 0 || (order == 0 && member.slug().compareTo(best.slug()) < 0)) {
-                best = member;
-                bestDate = when.get();
-            }
-        }
-        return Optional.ofNullable(best);
+        });
+        return dated.stream().min(order);
     }
 
     /** Split the graph into families, each with its earliest member as root. */

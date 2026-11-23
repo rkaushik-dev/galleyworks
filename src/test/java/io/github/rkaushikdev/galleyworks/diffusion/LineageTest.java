@@ -134,4 +134,30 @@ class LineageTest {
                         .spreads())
                 .isFalse();
     }
+
+    @Test
+    void aTieOnDatesBreaksOnTheIntroductionBeforeTheSlug() {
+        ReuseGraph graph = graphWith(pair(MT, WY));
+        graph.note(MT, Optional.of(LocalDate.of(2024, 7, 1)), Optional.of(LocalDate.of(2024, 2, 9)));
+        graph.note(WY, Optional.of(LocalDate.of(2024, 7, 1)), Optional.of(LocalDate.of(2024, 1, 15)));
+        assertThat(Lineage.earliest(graph, List.of(MT, WY))).contains(WY);
+        assertThat(Lineage.lineages(graph).getFirst().root()).contains(WY);
+    }
+
+    @Test
+    void aKnownIntroductionSortsBeforeAnUnknownOne() {
+        ReuseGraph graph = graphWith(pair(MT, WY));
+        graph.note(MT, Optional.of(LocalDate.of(2024, 7, 1)), Optional.of(LocalDate.of(2024, 2, 9)));
+        date(graph, WY, 2024, 7, 1);
+        assertThat(Lineage.earliest(graph, List.of(WY, MT))).contains(MT);
+        assertThat(graph.introducedOn(WY)).isEmpty();
+    }
+
+    @Test
+    void anIntroductionNeverOutranksAnEarlierEffectiveDate() {
+        ReuseGraph graph = graphWith(pair(MT, WY));
+        graph.note(MT, Optional.of(LocalDate.of(2024, 7, 2)), Optional.of(LocalDate.of(2023, 1, 9)));
+        graph.note(WY, Optional.of(LocalDate.of(2024, 7, 1)), Optional.empty());
+        assertThat(Lineage.earliest(graph, List.of(MT, WY))).contains(WY);
+    }
 }

@@ -29,6 +29,7 @@ public final class ReuseGraph implements Iterable<ReuseEdge> {
 
     private final Map<List<String>, ReuseEdge> edges = new HashMap<>();
     private final Map<String, Optional<LocalDate>> dates = new HashMap<>();
+    private final Map<String, LocalDate> introductions = new HashMap<>();
     private final Map<String, InstrumentKey> keys = new HashMap<>();
 
     /** Number of edges. */
@@ -52,6 +53,17 @@ public final class ReuseGraph implements Iterable<ReuseEdge> {
         if (enacted.isPresent() || !dates.containsKey(key.slug())) {
             dates.put(key.slug(), enacted);
         }
+    }
+
+    /** Record an instrument with its effective date and, when known, its introduction date. */
+    public void note(InstrumentKey key, Optional<LocalDate> enacted, Optional<LocalDate> introduced) {
+        note(key, enacted);
+        introduced.ifPresent(when -> introductions.put(key.slug(), when));
+    }
+
+    /** The date {@code key} was introduced, if known. */
+    public Optional<LocalDate> introducedOn(InstrumentKey key) {
+        return Optional.ofNullable(introductions.get(key.slug()));
     }
 
     /** The date {@code key} took effect, if known. */
