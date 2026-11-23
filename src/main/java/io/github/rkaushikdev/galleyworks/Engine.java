@@ -11,6 +11,7 @@ import io.github.rkaushikdev.galleyworks.match.BoilerplateFilter;
 import io.github.rkaushikdev.galleyworks.match.Dedupe;
 import io.github.rkaushikdev.galleyworks.match.Matcher;
 import io.github.rkaushikdev.galleyworks.match.SegmentMatch;
+import io.github.rkaushikdev.galleyworks.match.StandardClauses;
 import io.github.rkaushikdev.galleyworks.report.InstrumentReport;
 import io.github.rkaushikdev.galleyworks.report.MappingTextSource;
 import io.github.rkaushikdev.galleyworks.report.Ranking;
@@ -44,7 +45,8 @@ public final class Engine {
     private final MappingTextSource texts = new MappingTextSource();
     private final Stopwatch stopwatch = new Stopwatch();
     private final Fingerprinter fingerprinter;
-    private BoilerplateFilter boilerplate = new BoilerplateFilter();
+    private final BoilerplateFilter standard;
+    private BoilerplateFilter boilerplate;
 
     /**
      * The result of matching one instrument.
@@ -81,6 +83,9 @@ public final class Engine {
         this.index = index;
         this.registry = registry;
         this.fingerprinter = new Fingerprinter(config);
+        this.standard =
+                config.match().ignoreStandardClauses() ? StandardClauses.filter(config) : new BoilerplateFilter();
+        this.boilerplate = standard;
     }
 
     /** The configuration. */
@@ -142,9 +147,12 @@ public final class Engine {
         return learnBoilerplate(0.2, minSegments);
     }
 
-    /** Learn the corpus boilerplate from whatever is indexed so far. */
+    /**
+     * Learn the corpus boilerplate from whatever is indexed so far. The standard clauses stay
+     * suppressed when the configuration asks for that, whatever the corpus teaches.
+     */
     public int learnBoilerplate(double maxRatio, int minSegments) {
-        boilerplate = BoilerplateFilter.learn(index, maxRatio, minSegments);
+        boilerplate = BoilerplateFilter.learn(index, maxRatio, minSegments).union(standard);
         return boilerplate.size();
     }
 

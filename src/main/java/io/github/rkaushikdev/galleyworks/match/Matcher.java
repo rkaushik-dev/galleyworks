@@ -20,7 +20,8 @@ import org.slf4j.Logger;
  * Finds the reuse in one instrument against an index.
  *
  * <p>Each stage narrows the previous one: the index proposes candidates that share an LSH band;
- * boilerplate fingerprints are removed from both sides; the surviving sets are scored against a
+ * boilerplate fingerprints are removed from both sides, for the alignment as much as for the
+ * scores, so no passage rests on a standard clause; the surviving sets are scored against a
  * containment floor that is higher for two instruments from the same jurisdiction; what is left is
  * aligned into passages; and a passage that is too short, or rests on too few distinct fingerprints,
  * is dropped, because a score without a passage a person can check is not a finding. Alignment is
@@ -148,9 +149,10 @@ public final class Matcher {
         if (score.bestContainment() < containmentFloor(SegmentRef.of(record), ref, settings)) {
             return Optional.empty();
         }
-        List<Passage> passages = Align.align(record, other, settings.maxAnchorGap(), 2).stream()
-                .filter(passage -> passageIsReportable(passage, settings))
-                .toList();
+        List<Passage> passages =
+                Align.align(boilerplate.strip(record), boilerplate.strip(other), settings.maxAnchorGap(), 2).stream()
+                        .filter(passage -> passageIsReportable(passage, settings))
+                        .toList();
         if (passages.isEmpty()) {
             return Optional.empty();
         }

@@ -16,6 +16,8 @@ import java.util.Objects;
  * @param maxAnchorGap the max anchor gap setting
  * @param maxCandidates the max candidates setting
  * @param order the order setting
+ * @param ignoreStandardClauses whether severability, repealer and other standard clauses are
+ *     ignored as boilerplate before any corpus has been learned
  */
 public record MatchConfig(
         double minContainment,
@@ -25,7 +27,8 @@ public record MatchConfig(
         int minDistinctAnchors,
         int maxAnchorGap,
         int maxCandidates,
-        String order) {
+        String order,
+        boolean ignoreStandardClauses) {
 
     static final List<String> FIELDS = List.of(
             "min_containment",
@@ -35,7 +38,8 @@ public record MatchConfig(
             "min_distinct_anchors",
             "max_anchor_gap",
             "max_candidates",
-            "order");
+            "order",
+            "ignore_standard_clauses");
 
     /** Validates every field. */
     public MatchConfig {
@@ -55,7 +59,7 @@ public record MatchConfig(
 
     /** Every field at its default. */
     public MatchConfig() {
-        this(0.35, 0.6, 90, 0.25, 2, 40, 200, "score");
+        this(0.35, 0.6, 90, 0.25, 2, 40, 200, "score", true);
     }
 
     /** This configuration with minContainment replaced. */
@@ -68,7 +72,8 @@ public record MatchConfig(
                 minDistinctAnchors,
                 maxAnchorGap,
                 maxCandidates,
-                order);
+                order,
+                ignoreStandardClauses);
     }
     /** This configuration with sameJurisdictionContainment replaced. */
     public MatchConfig withSameJurisdictionContainment(double value) {
@@ -80,7 +85,8 @@ public record MatchConfig(
                 minDistinctAnchors,
                 maxAnchorGap,
                 maxCandidates,
-                order);
+                order,
+                ignoreStandardClauses);
     }
     /** This configuration with minPassageChars replaced. */
     public MatchConfig withMinPassageChars(int value) {
@@ -92,7 +98,8 @@ public record MatchConfig(
                 minDistinctAnchors,
                 maxAnchorGap,
                 maxCandidates,
-                order);
+                order,
+                ignoreStandardClauses);
     }
     /** This configuration with minContentRatio replaced. */
     public MatchConfig withMinContentRatio(double value) {
@@ -104,7 +111,8 @@ public record MatchConfig(
                 minDistinctAnchors,
                 maxAnchorGap,
                 maxCandidates,
-                order);
+                order,
+                ignoreStandardClauses);
     }
     /** This configuration with minDistinctAnchors replaced. */
     public MatchConfig withMinDistinctAnchors(int value) {
@@ -116,7 +124,8 @@ public record MatchConfig(
                 value,
                 maxAnchorGap,
                 maxCandidates,
-                order);
+                order,
+                ignoreStandardClauses);
     }
     /** This configuration with maxAnchorGap replaced. */
     public MatchConfig withMaxAnchorGap(int value) {
@@ -128,7 +137,8 @@ public record MatchConfig(
                 minDistinctAnchors,
                 value,
                 maxCandidates,
-                order);
+                order,
+                ignoreStandardClauses);
     }
     /** This configuration with maxCandidates replaced. */
     public MatchConfig withMaxCandidates(int value) {
@@ -140,7 +150,8 @@ public record MatchConfig(
                 minDistinctAnchors,
                 maxAnchorGap,
                 value,
-                order);
+                order,
+                ignoreStandardClauses);
     }
     /** This configuration with order replaced. */
     public MatchConfig withOrder(String value) {
@@ -152,6 +163,21 @@ public record MatchConfig(
                 minDistinctAnchors,
                 maxAnchorGap,
                 maxCandidates,
+                value,
+                ignoreStandardClauses);
+    }
+
+    /** This configuration with ignoreStandardClauses replaced. */
+    public MatchConfig withIgnoreStandardClauses(boolean value) {
+        return new MatchConfig(
+                minContainment,
+                sameJurisdictionContainment,
+                minPassageChars,
+                minContentRatio,
+                minDistinctAnchors,
+                maxAnchorGap,
+                maxCandidates,
+                order,
                 value);
     }
 
@@ -166,6 +192,7 @@ public record MatchConfig(
         mapping.put("max_anchor_gap", maxAnchorGap);
         mapping.put("max_candidates", maxCandidates);
         mapping.put("order", order);
+        mapping.put("ignore_standard_clauses", ignoreStandardClauses);
         return mapping;
     }
 
@@ -184,6 +211,7 @@ public record MatchConfig(
                         fields.integer("min_distinct_anchors", defaults.minDistinctAnchors()),
                         fields.integer("max_anchor_gap", defaults.maxAnchorGap()),
                         fields.integer("max_candidates", defaults.maxCandidates()),
-                        fields.choice("order", defaults.order(), List.of("score", "length"))));
+                        fields.choice("order", defaults.order(), List.of("score", "length")),
+                        fields.flag("ignore_standard_clauses", defaults.ignoreStandardClauses())));
     }
 }

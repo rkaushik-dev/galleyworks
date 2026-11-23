@@ -42,6 +42,13 @@ public record BoilerplateFilter(Set<Long> suppressed, int segmentsSeen, double r
         return new BoilerplateFilter(suppressed, 0, 0.0, 0);
     }
 
+    /** This filter also suppressing everything {@code other} does; the learned counts are this one's. */
+    public BoilerplateFilter union(BoilerplateFilter other) {
+        Set<Long> combined = new HashSet<>(suppressed);
+        combined.addAll(other.suppressed());
+        return new BoilerplateFilter(combined, segmentsSeen, ratio, floor);
+    }
+
     /** Number of suppressed fingerprints. */
     public int size() {
         return suppressed.size();
@@ -60,6 +67,28 @@ public record BoilerplateFilter(Set<Long> suppressed, int segmentsSeen, double r
     /** The fingerprints of {@code record} the filter keeps. */
     public List<Long> keeps(SegmentFingerprint record) {
         return apply(record.fingerprintValues());
+    }
+
+    /**
+     * {@code record} with the suppressed shingles taken out of its selection, so an alignment built
+     * from it cannot rest a passage on boilerplate.
+     */
+    public SegmentFingerprint strip(SegmentFingerprint record) {
+        if (suppressed.isEmpty()) {
+            return record;
+        }
+        return new SegmentFingerprint(
+                record.key(),
+                record.segmentIndex(),
+                record.path(),
+                record.tokenCount(),
+                record.signature(),
+                record.simhash(),
+                record.selected().stream()
+                        .filter(shingle -> !suppressed.contains(shingle.value()))
+                        .toList(),
+                record.canonical(),
+                record.contentRatio());
     }
 
     /** Learn the boilerplate of {@code records} with the default ratio of 0.2 and floor of 5. */

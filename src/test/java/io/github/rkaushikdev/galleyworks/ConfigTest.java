@@ -103,4 +103,17 @@ class ConfigTest {
         assertThat(canon.normalizeNumbers()).isFalse();
         assertThat(canon.normalizeCitations()).isTrue();
     }
+
+    @Test
+    void standardClausesAreIgnoredUnlessTheConfigurationSaysOtherwise() {
+        assertThat(new EngineConfig().match().ignoreStandardClauses()).isTrue();
+        EngineConfig counting = EngineConfig.fromMapping(Map.of("match", Map.of("ignore_standard_clauses", false)));
+        assertThat(counting.match().ignoreStandardClauses()).isFalse();
+        assertThat(counting.match().toMapping()).containsEntry("ignore_standard_clauses", false);
+        assertThat(counting.digest()).isEqualTo(new EngineConfig().digest());
+        assertThat(new MatchConfig().withMinContainment(0.5).ignoreStandardClauses())
+                .isTrue();
+        assertThat(new MatchConfig().withOrder("length").withIgnoreStandardClauses(false))
+                .isEqualTo(new MatchConfig().withIgnoreStandardClauses(false).withOrder("length"));
+    }
 }
